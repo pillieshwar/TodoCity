@@ -3189,6 +3189,7 @@ button.tf-chip { cursor: pointer; }
 /* A task an agent added or changed: the agent's icon and plain words, quietly. */
 .agent-mark { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
 .agent-mark .agent-tile { border-radius: 4px; }
+.agent-mark + .agent-undo { margin-left: 8px; }
 .agent-undo { border: 1px solid var(--line); background: transparent; color: var(--muted); font: inherit; font-size: 11.5px; padding: 1px 8px; border-radius: 6px; cursor: pointer; }
 .agent-undo:hover { color: var(--ink); border-color: var(--teal); }
 .agents-banner {
@@ -3445,4 +3446,4 @@ button.tf-chip { cursor: pointer; }
 .wg-any .wg-task .wg-title { -webkit-line-clamp: 1; }
 .plan-any.slim { padding-top: 6px; padding-bottom: 6px; }
 .mcal.week-only .mcal-grid { margin-bottom: 4px; }
-.row-repeat { display: inline-flex; align-items: center; color: var(--teal); flex: none; }
+.row-repeat { display: inline-flex; align-items: center; color: var(--teal); flex: none; margin-right: 5px; }

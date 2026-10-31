@@ -1450,7 +1450,8 @@ await shot("full-agents-row-send", FULL, agentsFull({ settings: LIGHT }), async 
   await row.hover();
   await row.getByRole("button", { name: "Send to agent" }).click();
   await p.locator(".send-dialog", { hasText: "Book flights" }).waitFor();
-  // Return starts it: the Start button has the focus.
+  // Return starts it: the Start button has the focus (once the agents have loaded).
+  await p.waitForFunction(() => /^Start/.test(document.activeElement?.textContent ?? ""));
   await p.keyboard.press("Enter");
   await p.waitForFunction(() => window.__termStart?.taskId > 0);
   await p.locator(".run-pill", { hasText: "is working" }).first().waitFor();

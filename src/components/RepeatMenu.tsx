@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type CSSProperties, type RefObject, useLayoutEffect, useRef, useState } from "react";
 import { LineIcon } from "./LineIcon";
 import { parseISODate, toISODate } from "../lib/dates";
 import { describe, nextDay, ordinal, parseRepeat, presetRule, toStored, upcoming, type Freq, type RepeatRule } from "../lib/repeat";
@@ -13,6 +13,29 @@ const QUICK: { id: string; label: string }[] = [
   { id: "monthly", label: "Every month" },
   { id: "yearly", label: "Every year" },
 ];
+
+/**
+ * Keep a menu on screen: open it above its button when there's more room
+ * there, and let it scroll when neither side has room for all of it.
+ */
+function useFit(ref: RefObject<HTMLDivElement | null>, key: unknown): CSSProperties {
+  const [style, setStyle] = useState<CSSProperties>({});
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const anchor = el?.parentElement;
+    if (!el || !anchor) return;
+    el.style.maxHeight = "";
+    const menu = el.getBoundingClientRect();
+    const a = anchor.getBoundingClientRect();
+    const below = window.innerHeight - a.bottom - 14;
+    const above = a.top - 14;
+    if (menu.height <= below) setStyle({});
+    else if (above > below) setStyle({ top: "auto", bottom: "calc(100% + 6px)", maxHeight: Math.max(160, above), overflowY: "auto" });
+    else setStyle({ maxHeight: Math.max(160, below), overflowY: "auto" });
+    // Measure again when what's inside changes size.
+  }, [ref, key]);
+  return style;
+}
 
 const fmtDay = (iso: string, locale: string) => parseISODate(iso).toLocaleDateString(locale, { weekday: "short", month: "short", day: "numeric" });
 
@@ -40,6 +63,8 @@ export function RepeatMenu({
   const start = value.date ?? today;
   const current = parseRepeat(value.repeat);
   const [custom, setCustom] = useState<false | "custom" | "after">(false);
+  const box = useRef<HTMLDivElement>(null);
+  const fit = useFit(box, custom);
   const weekday = parseISODate(start).toLocaleDateString(locale, { weekday: "long" });
   const hint: Record<string, string> = {
     weekdays: "Mon–Fri",
@@ -66,7 +91,7 @@ export function RepeatMenu({
 
   const stored = value.repeat;
   return (
-    <div className="tf-menu right" role="menu" aria-label="Repeat">
+    <div className="tf-menu right" role="menu" aria-label="Repeat" ref={box} style={fit}>
       <div className="tf-head">Repeat</div>
       {QUICK.map((r) => (
         <button
@@ -206,9 +231,11 @@ export function RepeatEditor({
     count: ends === "count" ? (r.count ?? 10) : null,
   };
   const preview = upcoming(final, start, value.deadline, 8);
+  const box = useRef<HTMLDivElement>(null);
+  const fit = useFit(box, `${r.freq}${r.afterDone}${ends}`);
 
   return (
-    <div className="tf-menu right wide rep-edit" role="dialog" aria-label="Custom repeat">
+    <div className="tf-menu right wide rep-edit" role="dialog" aria-label="Custom repeat" ref={box} style={fit}>
       <div className="tf-head">Repeat</div>
       <div className="rep-line">
         <span className="rep-k">Every</span>

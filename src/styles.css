@@ -3457,7 +3457,7 @@ button.tf-chip { cursor: pointer; }
   font: 500 12px var(--sans); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .tf-trio button:hover { color: var(--ink); background: color-mix(in srgb, var(--line) 90%, var(--panel)); }
-.tf-menu.rep-edit { width: 340px; display: flex; flex-direction: column; gap: 9px; padding: 10px 12px 12px; max-height: min(600px, calc(100vh - 120px)); overflow-y: auto; }
+.tf-menu.rep-edit { width: 340px; max-width: min(360px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 9px; padding: 10px 12px 12px; }
 .rep-line { display: flex; align-items: center; gap: 8px; font-size: 13px; flex-wrap: wrap; }
 .rep-line.top { align-items: flex-start; }
 .rep-k { width: 64px; flex: none; color: var(--muted); font-size: 12.5px; }
@@ -3483,3 +3483,4 @@ button.tf-chip { cursor: pointer; }
 .rep-pills span { font-size: 11.5px; padding: 2px 7px; border-radius: 6px; background: var(--paper); border: 1px solid var(--line); color: var(--muted); }
 .rep-pills span.last { border-color: var(--teal); color: var(--teal); font-weight: 600; }
 .rep-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.tf-menu.rep-edit > * { flex-shrink: 0; }

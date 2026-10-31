@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, onAgentChanges } from "../lib/api";
 import type { AgentApp, AgentChange, AgentsStatus } from "../lib/types";
-import { EmailTasksSection } from "./EmailTasksSection";
 import { Toggle } from "./GeneralSettings";
 import { safeLocale } from "../lib/locale";
 import { InfoTip } from "./InfoTip";
@@ -50,30 +49,32 @@ export function AgentsPage() {
               .catch((e) => setError(String(e)))
           }
         />
-        <Toggle
-          label="Full access"
-          info={`Agents can read, add, change, schedule, complete and delete tasks, projects and sections (${status.tool_count} tools). Everything they do is marked and can be undone. What they read goes to their AI service.`}
-          checked={status.full_access}
-          disabled={!status.enabled}
-          onChange={(v) =>
-            void api
-              .agentsSetFullAccess(v)
-              .then(onStatus)
-              .catch((e) => setError(String(e)))
-          }
-        />
-        <Toggle
-          label="Suggest tasks on their own"
-          info="When you mention a deadline or say “remind me”, agents send it without being asked. You still approve each one."
-          checked={status.proactive}
-          disabled={!status.enabled}
-          onChange={(v) =>
-            void api
-              .agentsSetProactive(v)
-              .then(onStatus)
-              .catch((e) => setError(String(e)))
-          }
-        />
+        {status.enabled && (
+          <div className="toggle-nested">
+            <Toggle
+              label="Full access"
+              info={`Agents can read, add, change, schedule, complete and delete tasks, projects and sections (${status.tool_count} tools). Everything they do is marked and can be undone. What they read goes to their AI service.`}
+              checked={status.full_access}
+              onChange={(v) =>
+                void api
+                  .agentsSetFullAccess(v)
+                  .then(onStatus)
+                  .catch((e) => setError(String(e)))
+              }
+            />
+            <Toggle
+              label="Suggest tasks on their own"
+              info="When you mention a deadline or say “remind me”, agents send it without being asked. You still approve each one."
+              checked={status.proactive}
+              onChange={(v) =>
+                void api
+                  .agentsSetProactive(v)
+                  .then(onStatus)
+                  .catch((e) => setError(String(e)))
+              }
+            />
+          </div>
+        )}
       </div>
 
       {status.temporary_location && (
@@ -89,16 +90,15 @@ export function AgentsPage() {
       </h3>
       <AgentAppList status={status} onStatus={onStatus} onError={setError} />
 
-      <div className="agent-test">
-        <button type="button" className="ghost small" disabled={test === "running" || !status.enabled} onClick={() => void runTest()}>
-          {test === "running" ? "Testing…" : "Test the connection"}
-        </button>
-        {test && test !== "running" && <span className={test.ok ? "agent-test-result ok" : "agent-test-result error"}>{test.text}</span>}
-      </div>
-
       {status.full_access && <AgentDeletes onError={setError} />}
-      {status.enabled && <EmailTasksSection locale={safeLocale()} />}
-      <ManualSetup command={status.command} onError={setError} />
+      <ManualSetup command={status.command} onError={setError}>
+        <div className="agent-test">
+          <button type="button" className="ghost small" disabled={test === "running" || !status.enabled} onClick={() => void runTest()}>
+            {test === "running" ? "Testing…" : "Test the connection"}
+          </button>
+          {test && test !== "running" && <span className={test.ok ? "agent-test-result ok" : "agent-test-result error"}>{test.text}</span>}
+        </div>
+      </ManualSetup>
       {error && <p className="rem-error">{error}</p>}
     </section>
   );
@@ -223,7 +223,7 @@ function AppRow({
 }
 
 /** For apps TodoCity doesn't know: the command and JSON to paste. */
-export function ManualSetup({ command, onError }: { command: string; onError: (m: string | null) => void }) {
+export function ManualSetup({ command, onError, children }: { command: string; onError: (m: string | null) => void; children?: ReactNode }) {
   const [copied, setCopied] = useState<string | null>(null);
   const quoted = `"${command}"`;
   const generic = JSON.stringify({ mcpServers: { todocity: { command, args: ["--mcp"] } } }, null, 2);
@@ -240,7 +240,7 @@ export function ManualSetup({ command, onError }: { command: string; onError: (m
 
   return (
     <details className="agent-manual">
-      <summary>Set up another app by hand</summary>
+      <summary>More: another app, or test the connection</summary>
       <p className="agent-app-hint">Add a stdio MCP server named “todocity” that runs:</p>
       <code className="agent-cmd">{quoted} --mcp</code>
       <div className="agent-manual-actions">
@@ -251,6 +251,7 @@ export function ManualSetup({ command, onError }: { command: string; onError: (m
           {copied === "cmd" ? "Copied" : "Copy command"}
         </button>
       </div>
+      {children}
     </details>
   );
 }

@@ -120,16 +120,6 @@ const SETTINGS = {
   due_spotlight: true,
   agents_enabled: false,
   agents_proactive: true,
-  email: {
-    enabled: false,
-    start: "09:00",
-    end: "17:00",
-    interval: 30,
-    weekdays_only: false,
-    server: null,
-    last_ok: null,
-    last: null,
-  },
   watch: {
     enabled: false,
     apps: [],
@@ -314,8 +304,6 @@ function mockTauri(s) {
         always_skipped: [["com.1password.1password", "1Password"]],
         live: { state: "off", current: null, last_found: null, last_look: null, recent: [] },
       },
-    email_tasks_status: () =>
-      s.emailTasks ?? { schedule: s.settings.email, servers: [], claude_code_connected: false, running: false },
     sync_status: () =>
       s.sync ?? {
         on: false,
@@ -887,7 +875,9 @@ await shot(
     await p.locator(".connector-action").nth(1).click();
   },
 );
-await shot("panel-update-downloading", PANEL, scenario({ update: { state: "downloading", version: "0.4.5", percent: 40 } }));
+await shot("panel-update-downloading", PANEL, scenario({ update: { state: "downloading", version: "0.4.5", percent: 40 } }), async (p) => {
+  if (await p.locator(".update-banner").count()) throw new Error("downloading is quiet");
+});
 await shot("panel-update-ready", PANEL, scenario({ update: { state: "ready", version: "0.4.5", notes: null } }));
 await shot("panel-update-ready-dark", PANEL, scenario({ update: { state: "ready", version: "0.4.5", notes: null } }), async () => {}, true);
 const CAPTURED = {
@@ -1148,31 +1138,15 @@ await shot("panel-connectors-agents", PANEL, scenario({ agents: AGENTS_ON }), as
   await tab(p, "Agents");
   await p.locator(".set-subhead", { hasText: "Your agents" }).scrollIntoViewIfNeeded();
 });
-await shot(
-  "panel-connectors-email",
-  PANEL,
-  scenario({
-    agents: AGENTS_ON,
-    emailTasks: {
-      schedule: {
-        ...SETTINGS.email,
-        enabled: true,
-        server: "outlook",
-        last_ok: localStamp(-12),
-        last: { at: localStamp(-12), ok: true, message: "Sent 2 tasks to TodoCity." },
-      },
-      servers: ["outlook", "github"],
-      claude_code_connected: true,
-      running: false,
-    },
-  }),
-  async (p) => {
-    await tab(p, "Agents");
-    await p.locator(".connector-subhead", { hasText: "Email to tasks" }).scrollIntoViewIfNeeded();
-  },
-);
+// v0.4.69: email to tasks is gone; Watch covers it.
+await shot("panel-agents-no-email", PANEL, scenario({ agents: AGENTS_ON }), async (p) => {
+  await tab(p, "Agents");
+  await p.locator(".set-subhead", { hasText: "Your agents" }).scrollIntoViewIfNeeded();
+  if (await p.getByText("Email to tasks").count()) throw new Error("Email to tasks still shows");
+});
 await shot("panel-connectors-agents-tested", PANEL, scenario({ agents: AGENTS_ON }), async (p) => {
   await tab(p, "Agents");
+  await p.getByText("More: another app, or test the connection").click();
   await p.getByRole("button", { name: "Test the connection" }).click();
   await p.waitForTimeout(200);
   await p.locator(".agent-test").scrollIntoViewIfNeeded();
@@ -1208,6 +1182,12 @@ await shot("panel-connectors-calendar-sync", PANEL, scenario({}), async (p) => {
   const work = p.locator(".calsync-group").first().locator(".calsync-lanes input");
   if ((await work.evaluateAll((els) => els.filter((e) => e.checked).length)) !== 0) throw new Error("turning off Work didn't turn off its projects");
   await p.locator(".calsync-lead").scrollIntoViewIfNeeded();
+});
+// v0.4.69: the follow-up switches show only once agents are on.
+await shot("panel-agents-off", PANEL, scenario(), async (p) => {
+  await tab(p, "Agents");
+  await p.getByRole("switch", { name: /^Agents can add tasks/ }).waitFor();
+  if (await p.getByRole("switch", { name: /^Full access/ }).count()) throw new Error("Full access shows only with agents on");
 });
 // v0.4.63: full access for agents, behind one switch.
 await shot("panel-connectors-agents-full", PANEL, scenario({ agents: AGENTS_ON }), async (p) => {
@@ -1292,17 +1272,25 @@ const AGENT_ACTIVITY = AGENT_FULL_TASKS.filter((t) => t.agent).map((t, i) => ({
   undone: false,
 }));
 const agentsFull = (o = {}) => full({ tasks: AGENT_FULL_TASKS, activity: AGENT_ACTIVITY, agents: { ...AGENT_STATUS, enabled: true, full_access: true }, ...o });
+// v0.4.69: whose tasks is in the header's View menu, not a switch.
+const VIEW_LABEL = { You: "Only mine", All: "Everything", Agents: "Changed by agents" };
 const who = (name) => async (p) => {
-  await p.getByRole("radio", { name: new RegExp(`^${name}`) }).click();
+  await p.getByRole("button", { name: "View options" }).click();
+  await p.getByRole("menuitemradio", { name: new RegExp(`^${VIEW_LABEL[name]}`) }).click();
   await p.waitForTimeout(250);
+};
+const boardView = async (p) => {
+  await p.getByRole("button", { name: "View options" }).click();
+  await p.getByRole("menuitemradio", { name: "Board" }).click();
 };
 await shot("full-who-all", FULL, agentsFull({ settings: LIGHT }), async (p) => {
   if ((await p.locator(".task.by-agent").count()) < 2) throw new Error("agent tasks not marked");
   if (!(await p.locator(".task:not(.by-agent)").count())) throw new Error("All shows your tasks too");
-  await p.locator(".agent-mark", { hasText: "Claude scheduled" }).first().waitFor();
+  await p.locator(".agent-mark", { hasText: "Scheduled by Claude" }).first().waitFor();
 });
 await shot("full-who-agents", FULL, agentsFull({ settings: LIGHT }), async (p) => {
   await who("Agents")(p);
+  await p.locator(".who-chip", { hasText: "Changed by agents" }).waitFor();
   await p.locator(".agents-banner", { hasText: "Claude" }).waitFor();
   if (await p.locator(".task:not(.by-agent)").count()) throw new Error("Agents shows only agents' tasks");
   await p.locator(".agent-undo").first().waitFor();
@@ -1449,7 +1437,7 @@ await shot("full-agents-list", FULL, runsFull({ settings: LIGHT }), async (p) =>
   await side("With agents")(p);
   for (const g of ["Needs you", "Ready to review", "Working"]) await p.locator(".group-title, h2, h3", { hasText: g }).first().waitFor();
   if ((await p.locator(".task").count()) !== 3) throw new Error("only tasks with agents");
-  if (await p.locator(".day-action", { hasText: "Move all to today" }).count()) throw new Error("no Move all on Needs you");
+  if (await p.locator(".day-action", { hasText: "Move to today" }).count()) throw new Error("no Move all on Needs you");
 });
 await shot("full-agents-list-dark", FULL, runsFull({ settings: DARK }), side("With agents"), true);
 await shot("full-agents-row-button", FULL, agentsFull({ settings: LIGHT }), async (p) => {
@@ -1462,7 +1450,8 @@ await shot("full-agents-row-send", FULL, agentsFull({ settings: LIGHT }), async 
   await row.hover();
   await row.getByRole("button", { name: "Send to agent" }).click();
   await p.locator(".send-dialog", { hasText: "Book flights" }).waitFor();
-  // Return starts it: the Start button has the focus.
+  // Return starts it: the Start button has the focus (once the agents have loaded).
+  await p.waitForFunction(() => /^Start/.test(document.activeElement?.textContent ?? ""));
   await p.keyboard.press("Enter");
   await p.waitForFunction(() => window.__termStart?.taskId > 0);
   await p.locator(".run-pill", { hasText: "is working" }).first().waitFor();
@@ -1488,14 +1477,16 @@ await shot("panel-agents-row-button", PANEL, scenario(), async (p) => {
 await shot("panel-agents-pill", PANEL, scenario({ runs: [runOf(TASKS.find((t) => t.due_date === day(0) && !t.done), 1, "claude", "Claude Code", "working")] }), async (p) => {
   await p.locator(".run-pill", { hasText: "Claude Code is working" }).first().waitFor();
 });
+// v0.4.69: with agents off, the header has no View button on Today and
+// "With agents" offers to set them up.
 await shot("full-who-setup", FULL, full({ settings: LIGHT, tasks: AGENT_FULL_TASKS }), async (p) => {
-  await p.locator(".who-setup", { hasText: "Set up" }).waitFor();
+  if (await p.getByRole("button", { name: "View options" }).count()) throw new Error("no View button on Today with agents off");
   if (await p.locator(".agent-mark").count()) throw new Error("no agent marks while agents are off");
-  await who("Agents")(p);
-  await p.getByRole("dialog", { name: "Let your AI apps help with your tasks" }).waitFor();
 });
-await shot("full-who-setup-go", FULL, full({ settings: LIGHT }), async (p) => {
-  await who("Agents")(p);
+await shot("full-who-setup-go", FULL, full({ settings: LIGHT, runs: [] }), async (p) => {
+  await p.evaluate(() => localStorage.setItem("todocity.list", "agents"));
+  await p.reload();
+  await p.getByRole("button", { name: "Let AI apps add and plan tasks" }).click();
   await p.getByRole("button", { name: "Set up AI agents" }).click();
   await p.locator(".set-subhead", { hasText: "Your agents" }).waitFor();
 });
@@ -1532,6 +1523,15 @@ await shot("full-today-hours", FULL, full({ settings: DARK }), async (p) => {
   // Today always shows its hours beside the list; there's no switch any more.
   if (await p.getByRole("radio", { name: "List + Hours" }).count()) throw new Error("the List / List + Hours switch is still there");
   if (!(await p.locator(".mcal").count())) throw new Error("no month calendar on the right");
+  // v0.4.69: beside Today, just the week and the hours (the list has the rest).
+  if ((await p.locator(".mcal.week-only .mcal-day").count()) !== 7) throw new Error("Today's pane shows one week");
+  if (await p.locator(".month-pane .plan-any:not(.slim)").count()) throw new Error("Today's pane repeats the untimed tasks");
+});
+await shot("full-hints-after-drag", FULL, full({ settings: DARK }), async (p) => {
+  await p.evaluate(() => localStorage.setItem("todocity.hint.dragged", "1"));
+  await p.reload();
+  await p.locator(".mcal").waitFor();
+  if (await p.getByText("Drag a task onto an hour").count()) throw new Error("the hint stays after the first drag");
 });
 await shot("full-overdue", FULL, full({ settings: DARK }), async (p) => {
   await side(/Overdue/)(p);
@@ -1566,7 +1566,7 @@ await shot("full-project", FULL, full({ settings: DARK }), async (p) => {
   await side(/Offsite 2026/)(p);
   // A project opens as a list; Board shows its floors as columns.
   if (await p.locator(".bcol").count()) throw new Error("a project should open as a list");
-  await p.getByRole("button", { name: "Board view" }).click();
+  await boardView(p);
   await p.locator(".board").waitFor();
   await p.waitForTimeout(300);
   if ((await p.locator(".bcol").count()) < 2) throw new Error("Board didn't show the floors as columns");
@@ -1758,7 +1758,7 @@ await shot("full-floor-added", FULL, full({ settings: DARK }), async (p) => {
 // Inbox: tasks in no project, as a board by default.
 await shot("full-inbox-board", FULL, full({ settings: DARK }), async (p) => {
   await side(/Inbox/)(p);
-  await p.getByRole("button", { name: "Board view" }).click();
+  await boardView(p);
   await p.locator(".board").waitFor();
   await p.waitForTimeout(300);
   // The board reaches down to the footer, with its scrollbar at the bottom.
@@ -1777,7 +1777,7 @@ await shot("full-inbox-list", FULL, full({ settings: DARK }), async (p) => {
 });
 await shot("full-inbox-drag", FULL, full({ settings: DARK }), async (p) => {
   await side(/Inbox/)(p);
-  await p.getByRole("button", { name: "Board view" }).click();
+  await boardView(p);
   await p.locator(".board").waitFor();
   await p.waitForTimeout(300);
   const card = p.locator(".bcard").first();
@@ -1797,7 +1797,7 @@ await shot("full-inbox-drag", FULL, full({ settings: DARK }), async (p) => {
 });
 await shot("full-board-floor-drag", FULL, full({ settings: DARK }), async (p) => {
   await side(/Offsite 2026/)(p);
-  await p.getByRole("button", { name: "Board view" }).click();
+  await boardView(p);
   await p.locator(".board").waitFor();
   await p.waitForTimeout(300);
   const card = p.locator(".bcard", { hasText: "Book flights" });
@@ -1894,17 +1894,16 @@ await shot("full-side-resized", FULL, full({ settings: DARK }), async (p) => {
   const kept = await p.locator(".app-full").getAttribute("style");
   if (!kept?.includes("--side-w: 420px")) throw new Error(`the width wasn't kept (${kept})`);
 });
-// The version dot: red with a newer version, and Update in its card.
+// v0.4.69: one quiet "Update ready" pill in the footer; nothing else.
 await shot("full-version-dot", FULL, full({ settings: DARK, update: { state: "ready", version: "0.9.9", notes: null } }), async (p) => {
-  // A newer version opens its card by itself, once.
-  await p.waitForTimeout(300);
-  if (!(await p.locator(".vdot-pop").count())) throw new Error("the update card didn't open by itself");
-  if (!(await p.locator(".vdot.red").count())) throw new Error("the dot isn't red with a newer version out");
+  await p.locator(".vdot.ready", { hasText: "Update ready" }).waitFor();
+  if (await p.locator(".update-banner").count()) throw new Error("no banner in full screen");
+  if (await p.locator(".sidebar .sb-dot").count()) throw new Error("no dot on the settings gear");
+  await p.locator(".vdot").click();
   await p.locator(".vdot-pop").getByRole("button", { name: "Update" }).waitFor();
 });
 await shot("full-version-latest", FULL, full({ settings: DARK, update: { state: "up_to_date" } }), async (p) => {
-  await p.locator(".vdot").click();
-  if (!(await p.locator(".vdot.green").count())) throw new Error("the dot isn't green on the latest version");
+  if (await p.locator(".vdot").count()) throw new Error("the footer stays quiet on the latest version");
 });
 // The mayor: a 3D figure, a man or a woman.
 await shot("full-mayor-pick", FULL, full({ settings: DARK }), async (p) => {
@@ -2227,6 +2226,28 @@ await shot("full-week-blocks", FULL, full({ settings: DARK, tasks: TIMED }), asy
   // 13:05–14:40 and 13:30–14:00 overlap: side by side.
   if (Math.abs(db.width - rb.width) > 2 || Math.abs(db.x - rb.x) < 10) throw new Error("overlapping tasks aren't side by side");
   if (!(await deep.innerText()).match(/1:05.*2:40/)) throw new Error(`no time range on the block: ${await deep.innerText()}`);
+});
+// v0.4.69: short tasks with long titles stay one tidy line; a crowded hour folds into "+N".
+const SHORT = [
+  ...FULL_TASKS,
+  task("Reply to Maya about the venue options for the offsite kickoff", { due_date: day(1), due_time: "09:30", duration: 5 }),
+  task("Confirm catering headcount", { due_date: day(1), due_time: "14:00", duration: 15 }),
+  task("Send the signed contract to Dana", { due_date: day(1), due_time: "14:00", duration: 15 }),
+  task("Book a room for the kickoff", { due_date: day(1), due_time: "14:05", duration: 15 }),
+];
+await shot("full-week-short", FULL, full({ settings: LIGHT, tasks: SHORT }), async (p) => {
+  await side(/Calendar/)(p);
+  const lane = p.locator(".wg-lane").nth(1);
+  const reply = lane.locator(".wg-task", { hasText: "Reply to Maya" });
+  await reply.scrollIntoViewIfNeeded();
+  const b = await reply.boundingBox();
+  if (b.height < 21) throw new Error(`a 5-minute task is ${Math.round(b.height)}px, too short to read`);
+  if (!(await reply.locator(".wg-t").evaluate((e) => getComputedStyle(e).whiteSpace === "nowrap"))) throw new Error("a short task's title wraps");
+  const fold = lane.locator(".wg-fold", { hasText: "+2" });
+  await fold.waitFor();
+  if ((await lane.locator(".wg-task", { hasText: /Confirm catering|Send the signed|Book a room/ }).count()) !== 1) throw new Error("a crowded hour shows one task and +2");
+  await reply.hover();
+  await p.getByRole("tooltip").filter({ hasText: "venue options for the offsite kickoff" }).waitFor();
 });
 await shot("full-week-resize", FULL, full({ settings: DARK, tasks: TIMED }), async (p) => {
   await side(/Calendar/)(p);

@@ -16,7 +16,7 @@ import { deadlineChip } from "../lib/lists";
 import { dueChip } from "../lib/due";
 import { api } from "../lib/api";
 import type { DayGroup } from "../lib/grouping";
-import { findSchedule, repeatShort, timeLabel } from "../lib/schedule";
+import { findSchedule, repeatLabel, timeLabel } from "../lib/schedule";
 import { dayOrderForLocale, relativeLabel, toISODate } from "../lib/dates";
 import type { TaskDrag } from "../lib/useTaskDrag";
 import type { TaskActions } from "../lib/taskActions";
@@ -151,7 +151,7 @@ export function TaskList(props: Props) {
                 onClick={() => void actions.moveAll(g.tasks, today)}
                 title="Move every overdue task to today"
               >
-                Move all to today
+                Move to today
               </button>
             )}
           </h2>
@@ -418,11 +418,17 @@ function RowMeta({
       <LineIcon name="flagFilled" size={13} />
     </span>
   );
+  const repeats = task.recurrence && !task.done ? (
+    <span className="row-repeat" title={`${repeatLabel(task.recurrence) ?? "Repeats"}${task.paused ? " · paused" : ""}`} aria-label={repeatLabel(task.recurrence) ?? "Repeats"}>
+      <LineIcon name="repeat" size={12} />
+    </span>
+  ) : null;
   if (whenOnly) {
-    if (!parts.length && !flag) return null;
+    if (!parts.length && !flag && !repeats) return null;
     return (
       <div className="task-meta">
         {flag}
+        {repeats}
         {parts.map((p, i) => (
           <span key={i} className="meta-part">
             {i > 0 && <span className="meta-sep" aria-hidden>·</span>}
@@ -459,15 +465,14 @@ function RowMeta({
       </button>,
     );
   }
-  const repeat = repeatShort(task.recurrence);
-  if (repeat) parts.push(<span key="r">{repeat.toLowerCase()}</span>);
   if (agentTask) parts.unshift(<AgentMark key="ag" task={task} />);
   if (run && !task.done) parts.unshift(<AgentRunPill key="run" run={run} />);
   if (sourceLabel(task) && !link && showSource !== "never") parts.push(<SourceChip key="src" task={task} onFail={onError} />);
-  if (!parts.length && !flag) return null;
+  if (!parts.length && !flag && !repeats) return null;
   return (
     <div className="task-meta">
       {flag}
+      {repeats}
       {parts.map((p, i) => (
         <span key={i} className="meta-part">
           {i > 0 && <span className="meta-sep" aria-hidden>·</span>}
@@ -509,8 +514,6 @@ function RowSub({
       </button>,
     );
   }
-  const repeat = repeatShort(task.recurrence);
-  if (repeat) parts.push(<span key="r">{repeat}</span>);
   const link = hasNotes ? null : firstLink(task.notes);
   if (link) {
     parts.push(

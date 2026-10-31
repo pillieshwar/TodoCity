@@ -11,18 +11,7 @@ export function UpdateBanner({ update, onError }: { update: UpdateStatus; onErro
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (update.state === "downloading") {
-    return (
-      <div className="update-banner" role="status">
-        <UpdateIcon />
-        <p>
-          <strong>TodoCity {update.version}</strong> is available — getting it ready
-          {update.percent !== null ? ` (${update.percent}%)` : ""}…
-        </p>
-      </div>
-    );
-  }
-
+  // Downloading happens quietly; the note shows once it's ready.
   if (update.state !== "ready" || dismissed === update.version) return null;
 
   return (

@@ -89,8 +89,6 @@ pub struct AppSettings {
     /// Full access: connected agents can read, add, change, complete and
     /// delete tasks, projects and sections, with no review. Off by default.
     pub agents_full_access: bool,
-    /// Check email for to-dos through Claude Code on a schedule.
-    pub email: EmailSchedule,
     /// Notice to-dos in Slack and Outlook as they appear on screen.
     pub watch: WatchSettings,
     /// How TodoCity looks and behaves, as the user likes it.
@@ -253,49 +251,6 @@ impl Default for WatchSettings {
     }
 }
 
-/// `/email-tasks` run by TodoCity every `interval` minutes between `start`
-/// and `end`, local time.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct EmailSchedule {
-    pub enabled: bool,
-    /// `HH:MM`.
-    pub start: String,
-    pub end: String,
-    /// Minutes between runs: 15, 30 or 60.
-    pub interval: u32,
-    pub weekdays_only: bool,
-    /// The mail MCP server in Claude Code whose tools the run may use.
-    pub server: Option<String>,
-    /// When the last run that reached the mail finished, local
-    /// `YYYY-MM-DDTHH:MM:SS`; the next run reads mail from here on.
-    pub last_ok: Option<String>,
-    pub last: Option<EmailRun>,
-}
-
-impl Default for EmailSchedule {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            start: "09:00".into(),
-            end: "17:00".into(),
-            interval: 30,
-            weekdays_only: false,
-            server: None,
-            last_ok: None,
-            last: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EmailRun {
-    /// Local `YYYY-MM-DDTHH:MM:SS`.
-    pub at: String,
-    pub ok: bool,
-    pub message: String,
-}
-
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -333,7 +288,6 @@ impl Default for AppSettings {
             agents_enabled: false,
             agents_proactive: true,
             agents_full_access: false,
-            email: EmailSchedule::default(),
             watch: WatchSettings::default(),
             look: LookSettings::default(),
             modes: ViewMode::defaults(),

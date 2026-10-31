@@ -10,7 +10,6 @@ import type {
   TodoistPreview,
   AgentsStatus,
   WatchStatus,
-  EmailTasksStatus,
   InboxItem,
   PopoverFocus,
   AppSettings,
@@ -172,16 +171,6 @@ export const api = {
   homeFolder: () => invoke<string>("home_folder"),
   /** Icons of the AI apps installed on this Mac, by agent or connector id (data URLs). */
   appIcons: (refresh = false) => invoke<Record<string, string>>("app_icons", { refresh }),
-  emailTasksStatus: () => invoke<EmailTasksStatus>("email_tasks_status"),
-  emailTasksSet: (change: {
-    enabled: boolean;
-    start: string;
-    end: string;
-    interval: number;
-    weekdays_only: boolean;
-    server: string | null;
-  }) => invoke<EmailTasksStatus>("email_tasks_set", { change }),
-  emailTasksRunNow: () => invoke<EmailTasksStatus>("email_tasks_run_now"),
   inboxList: () => invoke<InboxItem[]>("inbox_list"),
   /** `schedule`: a date worked out from the item's date_text. */
   inboxAccept: (id: number, schedule?: { due_date: string | null; due_time: string | null }) =>
@@ -381,9 +370,6 @@ export function onInboxChanged(handler: () => void): Promise<UnlistenFn> {
 }
 
 /** A scheduled email check started or finished. */
-export function onEmailTasksChanged(handler: () => void): Promise<UnlistenFn> {
-  return listen("email-tasks-changed", () => handler());
-}
 
 /** Watch mode turned on/off, paused, or noticed something. */
 /** Sync ran, or its settings or a pairing changed. */

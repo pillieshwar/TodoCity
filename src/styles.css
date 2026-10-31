@@ -520,9 +520,9 @@ html[data-view="panel"] body {
 .task.focused { border-color: var(--teal); box-shadow: 0 0 0 2px color-mix(in srgb, var(--teal) 22%, transparent); }
 .day-action {
   margin-left: auto; border: 0; background: transparent; padding: 0; font: inherit; text-transform: none;
-  letter-spacing: 0; font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--accent); cursor: pointer;
+  letter-spacing: 0; font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--muted); cursor: pointer;
 }
-.day-action:hover { text-decoration: underline; }
+.day-action:hover { color: var(--ink); text-decoration: underline; }
 .empty-art { color: var(--teal); margin-bottom: 8px; }
 .empty-big { font: 650 17px/1.3 var(--sans); color: var(--ink); }
 
@@ -1792,7 +1792,7 @@ html[data-full="1"] body { background: var(--paper); }
 .wg-late { color: var(--accent); font-weight: 600; }
 .wg-event {
   display: flex; flex-direction: column; min-width: 0; padding: 4px 7px; border-radius: 6px; font-size: 11.5px; line-height: 1.3;
-  color: var(--muted); background: color-mix(in srgb, var(--ev) 14%, transparent); box-shadow: inset 3px 0 0 var(--ev); cursor: default;
+  color: var(--muted); background: color-mix(in srgb, var(--ev) 16%, transparent); cursor: default;
 }
 .wg-event-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); font-weight: 500; }
 .wg-event-time { font-size: 10.5px; color: var(--faint); }
@@ -2626,6 +2626,8 @@ html[data-full="1"] body { background: var(--paper); }
 }
 .vdot.green { background: color-mix(in srgb, #30a46c 13%, transparent); color: #3f9c6c; }
 .vdot.red { background: color-mix(in srgb, #e5484d 14%, transparent); border-color: color-mix(in srgb, #e5484d 40%, transparent); color: #d1393e; }
+.vdot.ready { background: var(--teal-soft); border-color: color-mix(in srgb, var(--teal) 35%, transparent); color: var(--teal); }
+.vdot.ready .vdot-dot, .vdot-dot.ready { background: var(--teal); }
 .vdot.gray { background: color-mix(in srgb, var(--line) 80%, transparent); color: var(--faint); }
 :root[data-theme="dark"] .vdot.green { color: #6fd3a0; }
 :root[data-theme="dark"] .vdot.red { color: #ff9c9f; }
@@ -3184,21 +3186,10 @@ button.tf-chip { cursor: pointer; }
 .calsync-group-name { letter-spacing: 0.01em; }
 .calsync-lanes { margin: 0 0 0 22px; }
 
-/* You · All · Agents: whose tasks the lists show. */
-.who-switch { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); }
-.who-opt {
-  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 11px; border: 0; border-radius: 999px;
-  background: transparent; color: var(--faint); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
-}
-.who-opt:hover { color: var(--ink); }
-.who-opt.on { background: color-mix(in srgb, var(--line) 85%, var(--paper)); color: var(--ink); }
-.who-switch.agents .who-opt.on { background: var(--teal-soft); color: var(--teal); }
-.who-opt:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
-.who-count { min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--teal); color: var(--paper); font-size: 10px; font-weight: 700; display: inline-grid; place-items: center; }
-.who-setup { padding: 0 6px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--teal) 45%, transparent); color: var(--teal); font-size: 10px; font-weight: 700; line-height: 15px; }
-/* A task an agent added or changed. */
-.task.by-agent > .task-row .check { border-color: var(--teal); }
-.agent-mark { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border-radius: 5px; background: var(--teal-soft); color: var(--teal); font-weight: 600; }
+/* A task an agent added or changed: the agent's icon and plain words, quietly. */
+.agent-mark { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+.agent-mark .agent-tile { border-radius: 4px; }
+.agent-mark + .agent-undo { margin-left: 8px; }
 .agent-undo { border: 1px solid var(--line); background: transparent; color: var(--muted); font: inherit; font-size: 11.5px; padding: 1px 8px; border-radius: 6px; cursor: pointer; }
 .agent-undo:hover { color: var(--ink); border-color: var(--teal); }
 .agents-banner {
@@ -3391,3 +3382,68 @@ button.tf-chip { cursor: pointer; }
   min-width: 200px; min-height: 30px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px;
   background: var(--paper); color: var(--ink); font: inherit; font-size: 13px;
 }
+
+/* The header's View button and its menu (whose tasks, list or board). */
+.view-menu-box { position: relative; display: inline-flex; }
+.view-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 60; min-width: 220px; padding: 6px;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 14px 40px rgba(20, 20, 40, 0.16); display: flex; flex-direction: column;
+}
+.view-menu-head { font-size: 11.5px; font-weight: 600; color: var(--faint); padding: 7px 10px 4px; }
+.view-menu button {
+  display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.view-menu button:hover, .view-menu button:focus-visible { background: var(--panel); outline: none; }
+.view-menu button.sel { color: var(--teal); }
+.view-menu-check { width: 14px; display: inline-flex; color: var(--teal); }
+.view-menu-note { margin-left: auto; color: var(--faint); font-size: 12px; }
+.view-menu-sep { height: 1px; background: var(--line); margin: 5px 4px; }
+/* "Only mine ×": the filter the View menu set, cleared in one click. */
+.who-chip {
+  display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 4px 0 10px; border-radius: 999px;
+  background: var(--teal-soft); color: var(--teal); font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.who-chip button {
+  width: 18px; height: 18px; border-radius: 50%; border: 0; background: var(--paper); color: var(--teal);
+  font: inherit; font-size: 12px; line-height: 1; cursor: pointer; display: inline-grid; place-items: center; padding: 0;
+}
+/* Switches that only matter when the one above is on, shown under it. */
+.toggle-nested .toggle-row { border-top: 1px solid var(--line); padding-left: 30px; }
+.toggle-nested .toggle-label { font-weight: 500; }
+/* Calendar blocks: the label fits the block. One line fades out instead of
+   "…", and shows the time only where there's room. */
+.wg-block { container-type: inline-size; }
+.wg-task.wg-block .wg-title { display: flex; flex-direction: column; min-width: 0; -webkit-line-clamp: unset; }
+.wg-task.wg-block .wg-t {
+  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+}
+.wg-task.wg-block.fit-two .wg-t, .wg-task.wg-block.fit-line .wg-t {
+  display: block; white-space: nowrap; -webkit-mask-image: linear-gradient(90deg, #000 80%, transparent); mask-image: linear-gradient(90deg, #000 80%, transparent);
+}
+.wg-task.wg-block.fit-line .wg-title { flex-direction: row; align-items: center; gap: 6px; }
+.wg-task.wg-block.fit-line .wg-t { flex: 1; min-width: 0; }
+.wg-at { display: none; flex: none; font-size: 10.5px; font-weight: 500; color: var(--faint); }
+@container (min-width: 120px) { .wg-at { display: inline; } }
+.wg-task.wg-block.fit-two .wg-span { margin-top: 0; }
+.wg-fold {
+  display: grid; place-items: center; border: 0; border-radius: 6px; padding: 0; cursor: pointer;
+  background: var(--teal-soft); color: var(--teal); font: inherit; font-size: 11px; font-weight: 700;
+}
+.wg-fold:hover { filter: brightness(0.97); }
+.wg-more {
+  border: 0; background: transparent; color: var(--teal); font: inherit; font-size: 11.5px; font-weight: 600;
+  padding: 2px 6px; text-align: left; cursor: pointer;
+}
+.wg-peek {
+  position: fixed; z-index: 80; width: 280px; padding: 10px 12px; border-radius: 10px; pointer-events: none;
+  background: var(--paper); border: 1px solid var(--line); box-shadow: 0 14px 40px rgba(20, 20, 40, 0.18);
+  display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted);
+}
+.wg-peek.above { transform: translateY(-100%); }
+.wg-peek b { color: var(--ink); font-size: 13px; font-weight: 600; line-height: 1.35; }
+.wg-any .wg-task .wg-title { -webkit-line-clamp: 1; }
+.plan-any.slim { padding-top: 6px; padding-bottom: 6px; }
+.mcal.week-only .mcal-grid { margin-bottom: 4px; }
+.row-repeat { display: inline-flex; align-items: center; color: var(--teal); flex: none; margin-right: 5px; }

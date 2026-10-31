@@ -10,10 +10,12 @@ import type { TaskActions } from "../lib/taskActions";
 import type { TaskDrag } from "../lib/useTaskDrag";
 import type { CalendarEvent, NewTask, Task } from "../lib/types";
 import { daysForDrag, isSideways, swipeDays } from "../lib/weekSlide";
-import { DEFAULT_BLOCK_MIN, SNAP_MIN, durationLabel, endOf, layoutBlocks, minutesOf, takeDuration, timeOf } from "../lib/timeblock";
+import { DEFAULT_BLOCK_MIN, MIN_BLOCK_PX, SNAP_MIN, blockFit, drawnLen, durationLabel, endOf, foldBlocks, layoutBlocks, minutesOf, takeDuration, timeOf } from "../lib/timeblock";
 
 /** One hour of the Calendar, in pixels (matches `--wg-hour` in styles.css). */
 const HOUR_PX = 52;
+/** Any time shows this many a day before "+N more". */
+const ANY_SHOWN = 2;
 import { NewTaskField } from "./DayPlan";
 
 interface Props {
@@ -59,6 +61,24 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
   const [resizing, setResizing] = useState<{ id: number; y: number; from: number; to: number } | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  // Hovering a block a moment shows its whole title, time and length.
+  const [peek, setPeek] = useState<{ t: Task; x: number; y: number; below: boolean } | null>(null);
+  const peekTimer = useRef(0);
+  const peekOn = (t: Task, el: HTMLElement) => {
+    window.clearTimeout(peekTimer.current);
+    peekTimer.current = window.setTimeout(() => {
+      const r = el.getBoundingClientRect();
+      const below = r.bottom + 120 < window.innerHeight;
+      setPeek({ t, x: Math.min(r.left, window.innerWidth - 300), y: below ? r.bottom + 6 : r.top - 6, below });
+    }, 350);
+  };
+  const peekOff = () => {
+    window.clearTimeout(peekTimer.current);
+    setPeek(null);
+  };
+  useEffect(() => () => window.clearTimeout(peekTimer.current), []);
+  // Any time shows two a day until it's opened up.
+  const [anyOpen, setAnyOpen] = useState(false);
   const over = drag.drag?.over;
   // Sliding the week a day at a time keeps the hours where they are.
   const slid = useRef(false);
@@ -186,18 +206,19 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
     );
   };
 
-  /** A task at its real time and length in the hours. */
+  /** A task at its real time and length in the hours; its label fits its height. */
   const taskBlock = (t: Task, iso: string, top: number, height: number, left: string, width: string) => {
     const end = endOf(t.due_time!, t.duration);
     const span = `${timeLabel(t.due_time!, locale)}${end ? ` – ${timeLabel(end, locale)}` : ""}`;
-    const tiny = height < 34;
+    const fit = blockFit(height);
     return (
       <div
         key={t.id}
         className={[
           "wg-task",
           "wg-block",
-          tiny ? "tiny" : "",
+          `fit-${fit}`,
+          fit === "line" ? "tiny" : "",
           t.deadline && t.deadline <= iso ? "deadline" : "",
           completing.has(t.id) ? "completing" : "",
           openId === t.id ? "picked" : "",
@@ -207,7 +228,12 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
           .filter(Boolean)
           .join(" ")}
         style={{ top, height, left, width, ...(t.project && colors[t.project] ? { "--pc": colors[t.project] } : {}) } as CSSProperties}
-        onPointerDown={(e) => drag.start(e, t)}
+        onPointerDown={(e) => {
+          peekOff();
+          drag.start(e, t);
+        }}
+        onMouseEnter={(e) => peekOn(t, e.currentTarget)}
+        onMouseLeave={peekOff}
       >
         <button type="button" className="plan-check" data-nodrag onClick={() => complete(t)} aria-label={`Mark “${t.title}” done`}>
           <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.6">
@@ -218,14 +244,17 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
           type="button"
           className="wg-title"
           onClick={() => !drag.wasDrag() && onOpen(t)}
-          title={`${t.title}\n${span}${t.duration ? ` (${durationLabel(t.duration)})` : ""}\nDrag to move · drag the bottom edge to change its length`}
+          aria-label={`${t.title}, ${span}${t.duration ? `, ${durationLabel(t.duration)}` : ""}`}
         >
-          {tiny ? (
-            // Where it sits says when; the title gets the room.
-            t.title
+          {fit === "line" ? (
+            // One line: the title fades out, the time shows if there's room.
+            <>
+              <span className="wg-t">{t.title}</span>
+              <span className="wg-at">{timeLabel(t.due_time!, locale)}</span>
+            </>
           ) : (
             <>
-              {t.title}
+              <span className="wg-t">{t.title}</span>
               <span className="wg-span">{span}</span>
             </>
           )}
@@ -291,14 +320,39 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
       const end = en.slice(0, 10) >= nextDay ? 24 * 60 : minutesOf(en.slice(11, 16));
       items.push({ key: `e${e.id}${e.start}`, start, len: Math.max(end - start, 15), draw: (top, h, l, w) => eventBlock(e, iso, top, h, l, w) });
     }
-    const placed = layoutBlocks(items);
-    return items.map((it) => {
-      const p = placed.get(it.key) ?? { col: 0, cols: 1 };
+    // Laid out at the height they're drawn, so short ones don't hide under the next.
+    const blocks = items.map((it) => ({ key: it.key, start: it.start, len: drawnLen(it.len, HOUR_PX) }));
+    const { shown, folds } = foldBlocks(blocks, layoutBlocks(blocks), 2);
+    const drawn: ReactNode[] = items.flatMap((it) => {
+      const p = shown.get(it.key);
+      if (!p) return [];
       const top = (it.start / 60) * HOUR_PX + 1;
-      const height = Math.max((it.len / 60) * HOUR_PX - 2, 20);
+      const height = Math.max((it.len / 60) * HOUR_PX - 2, MIN_BLOCK_PX);
       const w = 100 / p.cols;
-      return it.draw(top, height, `calc(${p.col * w}% + 3px)`, `calc(${w}% - 6px)`);
+      return [it.draw(top, height, `calc(${p.col * w}% + 3px)`, `calc(${w}% - 6px)`)];
     });
+    // A crowded hour: the rest as "+N", which opens the first of them.
+    for (const f of folds) {
+      const hidden = f.keys.flatMap((k) => tasksAt.filter((t) => `t${t.id}` === k));
+      const names = f.keys
+        .map((k) => tasksAt.find((t) => `t${t.id}` === k)?.title ?? eventsAt.find((e) => `e${e.id}${e.start}` === k)?.title)
+        .filter(Boolean)
+        .join("\n");
+      drawn.push(
+        <button
+          key={`fold${f.start}`}
+          type="button"
+          className="wg-fold wg-block"
+          style={{ top: (f.start / 60) * HOUR_PX + 1, height: MIN_BLOCK_PX, left: "calc(50% + 3px)", width: "calc(50% - 6px)" }}
+          title={names}
+          aria-label={`${f.keys.length} more: ${names.replace(/\n/g, ", ")}`}
+          onClick={() => hidden[0] && onOpen(hidden[0])}
+        >
+          +{f.keys.length}
+        </button>,
+      );
+    }
+    return drawn;
   };
 
   const eventChip = (e: CalendarEvent, iso: string) => {
@@ -346,6 +400,16 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
   const nowHour = now.getHours();
   return (
     <div className="week-grid" ref={gridRef}>
+      {peek && (
+        <div className={peek.below ? "wg-peek" : "wg-peek above"} role="tooltip" style={{ left: peek.x, top: peek.y }}>
+          <b>{peek.t.title}</b>
+          <span>
+            {relativeLabel(peek.t.due_date ?? today, now, locale)} · {timeLabel(peek.t.due_time!, locale)}
+            {peek.t.duration ? ` – ${timeLabel(endOf(peek.t.due_time!, peek.t.duration)!, locale)} · ${durationLabel(peek.t.duration)}` : ""}
+          </span>
+          {peek.t.project && <span>{peek.t.heading ? `${peek.t.project} · ${peek.t.heading}` : peek.t.project}</span>}
+        </div>
+      )}
       <div
         className={["wg-row wg-days", onSlide ? "slidable" : "", sliding ? "sliding" : ""].filter(Boolean).join(" ")}
         title={onSlide ? "Drag the dates sideways to move a day at a time" : undefined}
@@ -407,8 +471,23 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
               if (e.target === e.currentTarget && !addAt) setAddAt({ iso, hour: "any" });
             }}
           >
-            {evs.allDay.map((e) => eventChip(e, iso))}
-            {plan.anytime.map((t) => chip(t, iso))}
+            {(() => {
+              // Two a day, then "+N more", so the hours stay in view.
+              const all = [...evs.allDay.map((e) => eventChip(e, iso)), ...plan.anytime.map((t) => chip(t, iso))];
+              const extra = all.length - ANY_SHOWN;
+              if (anyOpen || extra <= 1) return all;
+              return [
+                ...all.slice(0, ANY_SHOWN),
+                <button key="more" type="button" className="wg-more" onClick={() => setAnyOpen(true)}>
+                  +{extra} more
+                </button>,
+              ];
+            })()}
+            {anyOpen && iso === days[0] && cols.some((c) => c.evs.allDay.length + c.plan.anytime.length > ANY_SHOWN + 1) && (
+              <button type="button" className="wg-more" onClick={() => setAnyOpen(false)}>
+                Show less
+              </button>
+            )}
             {addAt?.iso === iso && addAt.hour === "any" && field(iso, "any")}
           </div>
         ))}

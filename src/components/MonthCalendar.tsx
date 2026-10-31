@@ -3,6 +3,7 @@ import { monthGrid, monthLabel, shiftMonth, weekdayLabels } from "../lib/calenda
 import { parseISODate } from "../lib/dates";
 import { useProjectColors } from "../lib/colors";
 import type { TaskDrag } from "../lib/useTaskDrag";
+import { showDragHint } from "../lib/hints";
 import type { Task } from "../lib/types";
 
 /**
@@ -19,6 +20,7 @@ export function MonthCalendar({
   drag,
   onSelect,
   scope,
+  weekOnly,
 }: {
   tasks: Task[];
   today: string;
@@ -30,6 +32,8 @@ export function MonthCalendar({
   onSelect: (iso: string) => void;
   /** Showing one project's (or floor's) tasks only: named in a small chip. */
   scope?: { label: string; color?: string } | null;
+  /** Just the picked day's week (Today shows its list beside it). */
+  weekOnly?: boolean;
 }) {
   const colors = useProjectColors();
   const sel = parseISODate(selected);
@@ -39,7 +43,14 @@ export function MonthCalendar({
     const d = parseISODate(selected);
     setYm((v) => (v.year === d.getFullYear() && v.month === d.getMonth() ? v : { year: d.getFullYear(), month: d.getMonth() }));
   }, [selected]);
-  const cells = useMemo(() => monthGrid(ym.year, ym.month, weekStart), [ym, weekStart]);
+  const month = useMemo(() => monthGrid(ym.year, ym.month, weekStart), [ym, weekStart]);
+  // Week only: the row with the picked day.
+  const cells = useMemo(() => {
+    if (!weekOnly) return month;
+    const i = month.findIndex((c) => c.iso === selected);
+    const row = i < 0 ? 0 : Math.floor(i / 7);
+    return month.slice(row * 7, row * 7 + 7);
+  }, [month, weekOnly, selected]);
   const labels = useMemo(() => weekdayLabels(locale, weekStart), [locale, weekStart]);
   // Open tasks per day (planned day, or deadline), and whether any is late.
   const byDay = useMemo(() => {
@@ -59,7 +70,7 @@ export function MonthCalendar({
   const over = drag.drag?.over;
 
   return (
-    <div className="mcal" aria-label="Month" style={scope?.color ? ({ "--pc": scope.color } as CSSProperties) : undefined}>
+    <div className={weekOnly ? "mcal week-only" : "mcal"} aria-label={weekOnly ? "Week" : "Month"} style={scope?.color ? ({ "--pc": scope.color } as CSSProperties) : undefined}>
       {scope && (
         <p className="mcal-scope" title="The calendar and hours here show only this project's tasks">
           <i aria-hidden />
@@ -68,9 +79,11 @@ export function MonthCalendar({
       )}
       <div className="mcal-head">
         <span className="mcal-title">{monthLabel(locale, ym.year, ym.month)}</span>
-        <button type="button" className="mcal-nav" onClick={() => setYm((v) => shiftMonth(v.year, v.month, -1))} aria-label="Previous month">
-          ‹
-        </button>
+        {!weekOnly && (
+          <button type="button" className="mcal-nav" onClick={() => setYm((v) => shiftMonth(v.year, v.month, -1))} aria-label="Previous month">
+            ‹
+          </button>
+        )}
         <button
           type="button"
           className="mcal-today"
@@ -82,9 +95,11 @@ export function MonthCalendar({
         >
           Today
         </button>
-        <button type="button" className="mcal-nav" onClick={() => setYm((v) => shiftMonth(v.year, v.month, 1))} aria-label="Next month">
-          ›
-        </button>
+        {!weekOnly && (
+          <button type="button" className="mcal-nav" onClick={() => setYm((v) => shiftMonth(v.year, v.month, 1))} aria-label="Next month">
+            ›
+          </button>
+        )}
       </div>
       <div className="mcal-grid" role="grid">
         {labels.map((l, i) => (
@@ -124,7 +139,7 @@ export function MonthCalendar({
           );
         })}
       </div>
-      <p className="mcal-hint">Drag a task onto a date to plan it</p>
+      {showDragHint(!!drag.drag) && <p className="mcal-hint">Drag a task onto a date to plan it</p>}
     </div>
   );
 }

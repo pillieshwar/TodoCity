@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { durationLabel, endOf, layoutBlocks, minutesOf, parseDuration, snapMinute, takeDuration, timeOf } from "./timeblock";
+import { blockFit, drawnLen, foldBlocks, durationLabel, endOf, layoutBlocks, minutesOf, parseDuration, snapMinute, takeDuration, timeOf } from "./timeblock";
 
 describe("minutes and times", () => {
   it("round-trips any minute", () => {
@@ -80,12 +80,55 @@ describe("layoutBlocks", () => {
       { key: "c", start: 600, len: 30 },
       { key: "d", start: 700, len: 15 },
     ]);
-    expect(l.get("a")).toEqual({ col: 0, cols: 2 });
-    expect(l.get("b")).toEqual({ col: 1, cols: 2 });
-    expect(l.get("c")).toEqual({ col: 0, cols: 1 }); // a and b have ended by 10:00
-    expect(l.get("d")).toEqual({ col: 0, cols: 1 });
+    expect(l.get("a")).toMatchObject({ col: 0, cols: 2 });
+    expect(l.get("b")).toMatchObject({ col: 1, cols: 2 });
+    expect(l.get("c")).toMatchObject({ col: 0, cols: 1 }); // a and b have ended by 10:00
+    expect(l.get("d")).toMatchObject({ col: 0, cols: 1 });
+    expect(l.get("c")?.run).not.toBe(l.get("a")?.run);
   });
   it("gives a lone block the whole width", () => {
-    expect(layoutBlocks([{ key: "x", start: 0, len: 7 }]).get("x")).toEqual({ col: 0, cols: 1 });
+    expect(layoutBlocks([{ key: "x", start: 0, len: 7 }]).get("x")).toEqual({ col: 0, cols: 1, run: 0 });
+  });
+});
+
+describe("short blocks", () => {
+  it("fit their label to their height", () => {
+    expect(blockFit(22)).toBe("line");
+    expect(blockFit(33)).toBe("line");
+    expect(blockFit(40)).toBe("two");
+    expect(blockFit(52)).toBe("full");
+  });
+  it("lay out at the height they're drawn, so a 5-minute task doesn't hide under the next", () => {
+    const len = drawnLen(5, 52);
+    expect(len).toBeGreaterThan(25);
+    const l = layoutBlocks([
+      { key: "a", start: 600, len },
+      { key: "b", start: 615, len: drawnLen(30, 52) },
+    ]);
+    expect(l.get("a")?.cols).toBe(2);
+    expect(drawnLen(60, 52)).toBe(60);
+  });
+  it("fold a crowded hour into +N instead of thin slivers", () => {
+    const blocks = [
+      { key: "a", start: 840, len: 30 },
+      { key: "b", start: 840, len: 30 },
+      { key: "c", start: 840, len: 30 },
+      { key: "d", start: 845, len: 30 },
+      { key: "e", start: 1000, len: 30 },
+    ];
+    const { shown, folds } = foldBlocks(blocks, layoutBlocks(blocks), 2);
+    expect([...shown.keys()].sort()).toEqual(["a", "e"]);
+    expect(shown.get("a")).toMatchObject({ col: 0, cols: 2 });
+    expect(shown.get("e")).toMatchObject({ col: 0, cols: 1 });
+    expect(folds).toEqual([{ start: 840, len: 35, keys: ["b", "c", "d"] }]);
+  });
+  it("keep two side by side", () => {
+    const blocks = [
+      { key: "a", start: 0, len: 30 },
+      { key: "b", start: 0, len: 30 },
+    ];
+    const { shown, folds } = foldBlocks(blocks, layoutBlocks(blocks), 2);
+    expect(shown.size).toBe(2);
+    expect(folds).toEqual([]);
   });
 });

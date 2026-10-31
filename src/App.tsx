@@ -46,7 +46,9 @@ import {
   onTermExit,
 } from "./lib/api";
 import { agentCounts, agentsBy, byAgent, filterWho, latestByTask, type Who } from "./lib/agents";
-import { AgentMarks, AgentsSetUpDialog, WhoSwitch } from "./components/WhoSwitch";
+import { AgentMarks, AgentsSetUpDialog } from "./components/WhoSwitch";
+import { ViewMenu, whoLabel } from "./components/ViewMenu";
+import { showDragHint } from "./lib/hints";
 import { AgentPanel, guessSize } from "./components/AgentPanel";
 import { AgentRuns, SendToAgentDialog, type AgentRunsValue } from "./components/AgentRuns";
 import {
@@ -1183,7 +1185,8 @@ export default function App() {
   };
   const banners = (
     <>
-      {tab !== "settings" && <UpdateBanner update={update} onError={setError} />}
+      {/* Full screen shows a quiet "Update ready" pill in its footer instead. */}
+      {tab !== "settings" && !full && <UpdateBanner update={update} onError={setError} />}
       {status &&
         !status.accessibility &&
         settings?.double_copy === false &&
@@ -1431,6 +1434,13 @@ export default function App() {
               <>
                 <p className="empty-big">Hand a task to an agent</p>
                 <p>Point at a task and click the agent button on its right. You'll see how it's going here.</p>
+                {!agentsOn && (
+                  <p>
+                    <button type="button" className="ghost small" onClick={() => setAskAgents(true)}>
+                      Let AI apps add and plan tasks
+                    </button>
+                  </p>
+                )}
               </>
             ) : list === "inbox" && !query.trim() ? (
               <>
@@ -1606,6 +1616,7 @@ export default function App() {
           weekStart={weekStart}
           drag={drag}
           onSelect={setSideDay}
+          weekOnly={list === "today"}
           scope={
             viewedProject !== null
               ? { label: floorOpen ? `${viewedProject} · ${floorTitle}` : viewedProject, color: projectColors[viewedProject] }
@@ -1616,7 +1627,7 @@ export default function App() {
           <span className="sp-title">
             {sideDay === today ? "Today" : parseISODate(sideDay).toLocaleDateString(LOCALE, { weekday: "long", month: "short", day: "numeric" })}
           </span>
-          <span className="sp-count">Drag a task onto an hour</span>
+          {showDragHint(!!drag.drag) && <span className="sp-count">Drag a task onto an hour</span>}
         </div>
         <DayPlan
           tasks={sideTasks}
@@ -1629,6 +1640,8 @@ export default function App() {
           drag={drag}
           onAdd={addFromPlan}
           onOpen={(t) => setOpenId(t.id)}
+          // Today's list already shows the untimed ones.
+          hoursOnly={list === "today" && sideDay === today}
         />
       </aside>
     ) : null;
@@ -1795,7 +1808,6 @@ export default function App() {
                 })
                 .catch((e) => setError(String(e)))
             }
-            updateReady={update.state === "ready"}
             lights={lights}
           />
         )}
@@ -1835,6 +1847,14 @@ export default function App() {
                 {fullSub}
               </span>
             )}
+            {tasksShown && list !== "logbook" && whoShown !== "all" && (
+              <span className="who-chip">
+                {whoLabel(whoShown)}
+                <button type="button" aria-label="Show everything" title="Show everything" onClick={() => setWho("all")}>
+                  ×
+                </button>
+              </span>
+            )}
             {/* The sidebar shows the mode; with it hidden, a small pill does. */}
             {tab === "tasks" && realMode && !sideOpen && <ModeSwitch settings={settings} onSettings={setSettings} onEdit={() => openSettings("modes")} />}
             {tab === "tasks" && upcoming && (
@@ -1851,32 +1871,17 @@ export default function App() {
               </div>
             )}
             <span className="topbar-gap" data-tauri-drag-region />
-            {tasksShown && list !== "logbook" && (
-              <WhoSwitch
+            {tasksShown && (
+              <ViewMenu
                 who={whoShown}
                 onWho={setWho}
+                agentsOn={agentsOn && list !== "logbook"}
                 agentCount={tasks.filter((t) => byAgent(t, now)).length}
-                setUp={agentsOn}
-                onSetUp={() => setAskAgents(true)}
+                layout={boardKey && !floorOpen ? viewMode : undefined}
+                onLayout={setViewMode}
               />
             )}
-            {tasksShown && boardKey && !floorOpen && (
-              <div className="view-toggle" role="group" aria-label="View">
-                <button type="button" aria-label="List view" title="List" aria-pressed={viewMode === "list"} onClick={() => setViewMode("list")}>
-                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-                    <path d="M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.01M2.5 8h.01M2.5 12h.01" strokeLinecap="round" />
-                  </svg>
-                </button>
-                <button type="button" aria-label="Board view" title="Board" aria-pressed={viewMode === "board"} onClick={() => setViewMode("board")}>
-                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-                    <rect x="2" y="2.5" width="3.2" height="11" rx="1" />
-                    <rect x="6.4" y="2.5" width="3.2" height="7" rx="1" />
-                    <rect x="10.8" y="2.5" width="3.2" height="9" rx="1" />
-                  </svg>
-                </button>
-              </div>
-            )}
-            {tasksShown && (
+            {tasksShown && !sideOpen && (
               <button
                 type="button"
                 className={searchOpen ? "icon on" : "icon"}
@@ -1891,7 +1896,7 @@ export default function App() {
                 }}
                 aria-label="Search"
                 aria-expanded={searchOpen}
-                title="Search (/)"
+                title="Search (⌘K)"
               >
                 <SearchIcon />
               </button>

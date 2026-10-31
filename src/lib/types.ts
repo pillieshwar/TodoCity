@@ -187,7 +187,6 @@ export interface AppSettings {
   due_spotlight: boolean;
   agents_enabled: boolean;
   agents_proactive: boolean;
-  email: EmailSchedule;
   watch: WatchSettings;
   /** Personal touches (missing in older settings files). */
   look?: LookSettings;
@@ -327,26 +326,6 @@ export interface AgentsStatus {
   temporary_location: boolean;
   apps: AgentApp[];
   pending: number;
-}
-
-/** Mirrors `settings::EmailSchedule`. */
-export interface EmailSchedule {
-  enabled: boolean;
-  start: string;
-  end: string;
-  interval: number;
-  weekdays_only: boolean;
-  server: string | null;
-  last_ok: string | null;
-  last: { at: string; ok: boolean; message: string } | null;
-}
-
-/** Mirrors `agents::email::Status`. */
-export interface EmailTasksStatus {
-  schedule: EmailSchedule;
-  servers: string[];
-  claude_code_connected: boolean;
-  running: boolean;
 }
 
 /** Mirrors `agents::apps::AppStatus`. */

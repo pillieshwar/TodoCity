@@ -99,6 +99,8 @@ export interface Placed {
   /** Which side-by-side column it's in, and how many share its time. */
   col: number;
   cols: number;
+  /** Which run of overlapping blocks it's in (0, 1, 2… down the day). */
+  run?: number;
 }
 
 /**
@@ -112,9 +114,12 @@ export function layoutBlocks(blocks: Block[]): Map<string, Placed> {
   let run: { key: string; col: number }[] = [];
   let runEnd = -1;
   let ends: number[] = [];
+  let runs = 0;
   const close = () => {
+    if (!run.length) return;
     const cols = Math.max(1, ends.length);
-    for (const r of run) out.set(r.key, { col: r.col, cols });
+    for (const r of run) out.set(r.key, { col: r.col, cols, run: runs });
+    runs += 1;
     run = [];
     ends = [];
   };
@@ -131,4 +136,63 @@ export function layoutBlocks(blocks: Block[]): Map<string, Placed> {
   }
   close();
   return out;
+}
+
+/** The shortest a block is drawn, in pixels: one readable line. */
+export const MIN_BLOCK_PX = 22;
+
+/**
+ * How a block's label fits its height: one line (title, then the time if
+ * there's room), two lines (title, then the time), or a title that wraps
+ * over up to three lines with the time under it.
+ */
+export function blockFit(heightPx: number): "line" | "two" | "full" {
+  if (heightPx < 34) return "line";
+  if (heightPx < 50) return "two";
+  return "full";
+}
+
+/** A block's length as laid out: never shorter than it's drawn, so short ones don't hide under the next. */
+export function drawnLen(len: number, hourPx: number): number {
+  return Math.max(len, (MIN_BLOCK_PX / hourPx) * 60);
+}
+
+export interface Fold {
+  /** Where the "+N" sits: the first hidden block's start. */
+  start: number;
+  len: number;
+  keys: string[];
+}
+
+/**
+ * Side by side, but never too thin to read: a run of up to `max` columns
+ * shows as is; a wider one shows its first `max - 1` columns and folds the
+ * rest into one "+N" in the last slot. Returns where each shown block goes
+ * (hidden ones are left out) and the folds.
+ */
+export function foldBlocks(blocks: Block[], placed: Map<string, Placed>, max = 2): { shown: Map<string, Placed>; folds: Fold[] } {
+  const shown = new Map<string, Placed>();
+  const byRun = new Map<number, Block[]>();
+  for (const b of blocks) {
+    const p = placed.get(b.key);
+    if (!p) continue;
+    if (p.cols <= max) {
+      shown.set(b.key, p);
+      continue;
+    }
+    if (p.col < max - 1) shown.set(b.key, { ...p, cols: max });
+    else {
+      const r = p.run ?? -1;
+      byRun.set(r, [...(byRun.get(r) ?? []), b]);
+    }
+  }
+  const folds: Fold[] = [];
+  for (const hidden of byRun.values()) {
+    hidden.sort((a, b) => a.start - b.start || a.key.localeCompare(b.key));
+    const start = hidden[0].start;
+    const end = Math.max(...hidden.map((b) => b.start + b.len));
+    folds.push({ start, len: end - start, keys: hidden.map((b) => b.key) });
+  }
+  folds.sort((a, b) => a.start - b.start);
+  return { shown, folds };
 }

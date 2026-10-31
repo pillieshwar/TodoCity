@@ -1100,6 +1100,43 @@ mod tests {
     }
 
     #[test]
+    fn a_counted_custom_repeat_finished_on_both_macs_makes_one_next_task_and_then_ends() {
+        let a = Store::open_in_memory().unwrap();
+        let b = Store::open_in_memory().unwrap();
+        let ta = a
+            .insert(NewTask {
+                title: "Book club".into(),
+                due_date: Some("2026-11-10".into()),
+                recurrence: Some("rrule:FREQ=MONTHLY;BYDAY=2TU;COUNT=2".into()),
+                ..Default::default()
+            })
+            .unwrap()
+            .id;
+        send(&a, "A", &b, "B");
+        let tb = by_title(&b, "Book club");
+        // Both Macs finish it while apart: one next one, the last.
+        set_done(&a, ta, true);
+        set_done(&b, tb, true);
+        send(&a, "A", &b, "B");
+        send(&b, "B", &a, "A");
+        for s in [&a, &b] {
+            let open: Vec<_> = s.all().unwrap().into_iter().filter(|t| !t.done).collect();
+            assert_eq!(open.len(), 1, "{:?}", titles(s));
+            assert_eq!(
+                open[0].recurrence.as_deref(),
+                Some("rrule:FREQ=MONTHLY;BYDAY=2TU;COUNT=1")
+            );
+        }
+        // Finishing the last one makes nothing more, on either Mac.
+        let last = by_title(&b, "Book club");
+        set_done(&b, last, true);
+        send(&b, "B", &a, "A");
+        for s in [&a, &b] {
+            assert!(s.all().unwrap().iter().all(|t| t.done), "{:?}", titles(s));
+        }
+    }
+
+    #[test]
     fn un_ticking_on_the_other_mac_removes_the_next_one_everywhere() {
         let a = Store::open_in_memory().unwrap();
         let b = Store::open_in_memory().unwrap();

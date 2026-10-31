@@ -8,6 +8,7 @@
  */
 
 import { addDays, type DayOrder, resolveDatePhrase, startOfDay, toISODate } from "./dates";
+import { alignStart, describe, parseRepeat, repeatText, toStored, upcoming, type RepeatRule } from "./repeat";
 
 export type Repeat = "daily" | "weekdays" | "weekly" | "biweekly" | "monthly" | "yearly";
 
@@ -20,8 +21,9 @@ export const REPEATS: { id: Repeat; label: string }[] = [
   { id: "yearly", label: "Every year" },
 ];
 
+/** "Every week", or a custom rule in words ("Every 2 weeks on Monday, Wednesday"). */
 export function repeatLabel(r: string | null | undefined): string | null {
-  return REPEATS.find((x) => x.id === r)?.label ?? null;
+  return REPEATS.find((x) => x.id === r)?.label ?? repeatText(r);
 }
 
 const SHORT: Record<Repeat, string> = {
@@ -33,9 +35,11 @@ const SHORT: Record<Repeat, string> = {
   yearly: "Yearly",
 };
 
-/** Compact label for list rows: "Weekly", "Weekdays". */
+/** Compact label for list rows: "Weekly", "Weekdays", or a custom rule in words. */
 export function repeatShort(r: string | null | undefined): string | null {
-  return r && r in SHORT ? SHORT[r as Repeat] : null;
+  if (r && r in SHORT) return SHORT[r as Repeat];
+  const rule = parseRepeat(r);
+  return rule ? describe(rule, "en-US", { ends: false }) : null;
 }
 
 export interface Schedule {
@@ -43,7 +47,8 @@ export interface Schedule {
   date: string | null;
   /** `HH:MM` (24-hour) or null. */
   time: string | null;
-  repeat: Repeat | null;
+  /** A preset ("weekly") or a custom rule (`rrule:…`). */
+  repeat: string | null;
   /** Other plausible days, most likely first. */
   alternatives: string[];
   /** The phrase named a specific day without ambiguity. */
@@ -120,17 +125,63 @@ export function takeTime(phrase: string): { time: string | null; rest: string } 
 // ── Repeats ─────────────────────────────────────────────────────────────────
 
 interface RepeatMatch {
-  repeat: Repeat | null;
+  /** A preset name or a custom `rrule:…`. */
+  repeat: string | null;
   weekday: number | null;
   monthDay: number | null;
   rest: string;
+  /** A custom rule: its first day is worked out from the rule itself. */
+  custom?: boolean;
+  /** "until dec 18": the end, still to be read as a date. */
+  untilText?: string;
+}
+
+const NTH: Record<string, number> = { "1st": 1, first: 1, "2nd": 2, second: 2, "3rd": 3, third: 3, "4th": 4, fourth: 4, last: -1 };
+const UNITS: Record<string, RepeatRule["freq"]> = { day: "day", days: "day", week: "week", weeks: "week", month: "month", months: "month", year: "year", years: "year" };
+const NUMBER_WORDS: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+const blank = (freq: RepeatRule["freq"], interval = 1): RepeatRule => ({ freq, interval, days: [], monthBy: null, afterDone: false, until: null, count: null });
+
+/** Custom repeats in plain words: "every other tuesday", "every mon and wed", "every 3 days", "the 2nd tuesday of every month", "the last day of every month". */
+function takeCustom(phrase: string): { rule: RepeatRule; m: RegExpMatchArray } | null {
+  const wd = `(?:${WEEKDAY_WORDS})s?`;
+  let m = phrase.match(new RegExp(`(?:^|\\s)(?:every|each) other (${WEEKDAY_WORDS})s?(?=\\s|$)`));
+  if (m) return { rule: { ...blank("week", 2), days: [WEEKDAY[m[1]]] }, m };
+  m = phrase.match(new RegExp(`(?:^|\\s)(?:every|each|on) (${wd}(?:(?:,? and |, ?| & )${wd})+)(?=\\s|$)`));
+  if (m) {
+    const days = [...new Set(m[1].split(/,? and |, ?| & /).map((w) => WEEKDAY[w.trim().replace(/s$/, "")] ?? WEEKDAY[w.trim()]))];
+    if (days.every((d) => d !== undefined)) return { rule: { ...blank("week"), days: days.sort() }, m };
+  }
+  m = phrase.match(/(?:^|\s)(?:every|each) (\d{1,2}|two|three|four|five|six|seven|eight|nine|ten) (days?|weeks?|months?|years?)(?=\s|$)/);
+  if (m) {
+    const n = NUMBER_WORDS[m[1]] ?? Number(m[1]);
+    if (n >= 1 && n <= 99) return { rule: blank(UNITS[m[2]], n), m };
+  }
+  m = phrase.match(new RegExp(`(?:^|\\s)(?:on )?(?:the |every |each )?(1st|2nd|3rd|4th|first|second|third|fourth|last) (${WEEKDAY_WORDS}) (?:of )?(?:every|each|the) month(?=\\s|$)`));
+  if (!m) m = phrase.match(new RegExp(`(?:^|\\s)(?:every|each) (1st|2nd|3rd|4th|first|second|third|fourth|last) (${WEEKDAY_WORDS})(?=\\s|$)`));
+  if (m) return { rule: { ...blank("month"), monthBy: { nth: NTH[m[1]], weekday: WEEKDAY[m[2]] } }, m };
+  m = phrase.match(/(?:^|\s)(?:on )?(?:the )?last day of (?:every|each|the) month(?=\s|$)|(?:^|\s)(?:every|each) month on the last day(?=\s|$)/);
+  if (m) return { rule: { ...blank("month"), monthBy: { day: -1 } }, m };
+  return null;
 }
 
 /** Pull a repeat rule out of `phrase` (lowercase). */
 export function takeRepeat(phrase: string): RepeatMatch {
+  // "… until dec 18": the end of the series, read separately.
+  const u = phrase.match(/(?:^|\s)(?:until|till|through) (.+)$/);
+  if (u && /(?:^|\s)(?:every|each|daily|weekly|monthly|yearly|weekdays|annually|fortnightly)(?=\s|$)/.test(phrase.slice(0, u.index))) {
+    const inner = takeRepeat(clean(phrase.slice(0, u.index)));
+    if (inner.repeat) return { ...inner, untilText: u[1].trim() };
+  }
   const none: RepeatMatch = { repeat: null, weekday: null, monthDay: null, rest: phrase };
   const cut = (m: RegExpMatchArray) =>
     clean(phrase.slice(0, m.index) + " " + phrase.slice((m.index ?? 0) + m[0].length));
+
+  const custom = takeCustom(phrase);
+  if (custom) {
+    const stored = toStored(custom.rule);
+    // "every 2 weeks" is just the preset.
+    return { repeat: stored, weekday: null, monthDay: null, rest: cut(custom.m), custom: !stored.startsWith("rrule:") ? undefined : true };
+  }
 
   let m = phrase.match(new RegExp(`(?:^|\\s)(?:every|each)\\s+(${WEEKDAY_WORDS})s?(?=\\s|$)`));
   if (!m) m = phrase.match(/(?:^|\s)(mondays|tuesdays|wednesdays|thursdays|fridays|saturdays|sundays)(?=\s|$)/);
@@ -209,6 +260,18 @@ export function resolveSchedule(
     }
   }
 
+  let repeat = rep.repeat;
+  if (repeat && rep.untilText) {
+    const end = resolveDatePhrase(stripFiller(rep.untilText), reference, order).date;
+    const rule = parseRepeat(repeat);
+    if (end && rule) repeat = toStored({ ...rule, until: end });
+    else leftover = true;
+  }
+  if (rep.custom && !date) {
+    // The first day the rule lands on, today included.
+    const rule = parseRepeat(repeat);
+    if (rule) date = alignStart(rule, toISODate(today));
+  }
   if (rep.repeat) {
     if (rep.weekday !== null) {
       date = toISODate(addDays(today, (rep.weekday - today.getDay() + 7) % 7));
@@ -229,7 +292,7 @@ export function resolveSchedule(
     confident = true;
   }
 
-  return { date, time, repeat: rep.repeat, alternatives, confident, leftover };
+  return { date, time, repeat, alternatives, confident, leftover };
 }
 
 // ── Finding a schedule inside text ──────────────────────────────────────────
@@ -353,43 +416,7 @@ export function resolveCaptured(
  * the month where it can (Jan 31 → Feb 28 → Mar 31).
  */
 export function repeatDates(start: string, rule: string, until: string, max = 120): string[] {
-  const [y, m, d] = start.split("-").map(Number);
-  const anchor = d;
-  const out: string[] = [];
-  let cur = new Date(y, m - 1, d);
-  const iso = (x: Date) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
-  const addMonths = (x: Date, n: number) => {
-    const total = x.getFullYear() * 12 + x.getMonth() + n;
-    const yy = Math.floor(total / 12);
-    const mm = total % 12;
-    const last = new Date(yy, mm + 1, 0).getDate();
-    return new Date(yy, mm, Math.min(anchor, last));
-  };
-  while (out.length < max && iso(cur) <= until) {
-    out.push(iso(cur));
-    switch (rule) {
-      case "daily":
-        cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1);
-        break;
-      case "weekdays":
-        do cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1);
-        while (cur.getDay() === 0 || cur.getDay() === 6);
-        break;
-      case "weekly":
-        cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 7);
-        break;
-      case "biweekly":
-        cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 14);
-        break;
-      case "monthly":
-        cur = addMonths(cur, 1);
-        break;
-      case "yearly":
-        cur = addMonths(cur, 12);
-        break;
-      default:
-        return out;
-    }
-  }
-  return out;
+  const r = parseRepeat(rule);
+  if (!r || start > until) return start <= until ? [start] : [];
+  return upcoming(r, start, until, max);
 }

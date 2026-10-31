@@ -47,10 +47,34 @@ describe("takeRepeat", () => {
     expect(takeRepeat("every month on the 15th")).toMatchObject({ repeat: "monthly", monthDay: 15 });
   });
 
+  it("reads custom repeats", () => {
+    expect(takeRepeat("every other tuesday").repeat).toBe("rrule:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU");
+    expect(takeRepeat("every mon and wed").repeat).toBe("rrule:FREQ=WEEKLY;BYDAY=MO,WE");
+    expect(takeRepeat("every 3 days").repeat).toBe("rrule:FREQ=DAILY;INTERVAL=3");
+    expect(takeRepeat("every 2 weeks").repeat).toBe("biweekly");
+    expect(takeRepeat("the 2nd tuesday of every month").repeat).toBe("rrule:FREQ=MONTHLY;BYDAY=2TU");
+    expect(takeRepeat("every last friday").repeat).toBe("rrule:FREQ=MONTHLY;BYDAY=-1FR");
+    expect(takeRepeat("last day of every month").repeat).toBe("rrule:FREQ=MONTHLY;BYMONTHDAY=-1");
+    expect(takeRepeat("every weekday until dec 18")).toMatchObject({ repeat: "weekdays", untilText: "dec 18" });
+  });
+
   it("keeps a time hidden in 'every morning'", () => {
     const r = takeRepeat("every morning");
     expect(r.repeat).toBe("daily");
     expect(takeTime(r.rest).time).toBe("09:00");
+  });
+});
+
+describe("custom repeats in a phrase", () => {
+  it("start on the first day they land on, and end on 'until'", () => {
+    const tue = resolveSchedule("every other tuesday", TUE);
+    expect(tue).toMatchObject({ date: "2026-10-13", repeat: "rrule:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU" });
+    expect(resolveSchedule("the 2nd tuesday of every month", TUE).date).toBe("2026-10-13");
+    expect(resolveSchedule("last day of every month", TUE).date).toBe("2026-10-31");
+    expect(resolveSchedule("every weekday until dec 18", TUE)).toMatchObject({
+      repeat: "rrule:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;UNTIL=20261218",
+      leftover: false,
+    });
   });
 });
 

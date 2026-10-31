@@ -3447,3 +3447,40 @@ button.tf-chip { cursor: pointer; }
 .plan-any.slim { padding-top: 6px; padding-bottom: 6px; }
 .mcal.week-only .mcal-grid { margin-bottom: 4px; }
 .row-repeat { display: inline-flex; align-items: center; color: var(--teal); flex: none; margin-right: 5px; }
+/* Repeat: an icon after priority; its rule in a few words once set. */
+.tf-tool.rep { color: var(--teal); background: var(--teal-soft); padding: 0 9px; }
+.tf-note.calm { background: var(--panel); border-color: var(--line); align-items: flex-start; }
+.tf-note.calm .licon { color: #d88a1c; }
+.tf-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding-top: 6px; margin-top: 6px; border-top: 1px solid var(--line); }
+.tf-trio button {
+  height: 30px; padding: 0 6px; border: 0; border-radius: 7px; background: var(--panel); color: var(--muted);
+  font: 500 12px var(--sans); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tf-trio button:hover { color: var(--ink); background: color-mix(in srgb, var(--line) 90%, var(--panel)); }
+.tf-menu.rep-edit { width: 340px; max-width: min(360px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 9px; padding: 10px 12px 12px; }
+.rep-line { display: flex; align-items: center; gap: 8px; font-size: 13px; flex-wrap: wrap; }
+.rep-line.top { align-items: flex-start; }
+.rep-k { width: 64px; flex: none; color: var(--muted); font-size: 12.5px; }
+.rep-line.top .rep-k { padding-top: 3px; }
+.rep-num { width: 52px; height: 28px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); color: var(--ink); font: inherit; padding: 0 6px; text-align: center; }
+.rep-edit select, .rep-date { height: 28px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); color: var(--ink); font: inherit; font-size: 13px; padding: 0 6px; }
+.rep-seg { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--panel); }
+.rep-seg button { border: 0; background: transparent; color: var(--muted); font: 500 12.5px var(--sans); padding: 5px 10px; border-radius: 6px; cursor: pointer; }
+.rep-seg button.on { background: var(--paper); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.rep-days { display: inline-flex; gap: 4px; }
+.rep-days button {
+  width: 30px; height: 28px; border-radius: 7px; border: 1px solid var(--line); background: var(--paper); color: var(--ink);
+  font: 500 12.5px var(--sans); cursor: pointer;
+}
+.rep-days button.on { background: var(--teal); border-color: var(--teal); color: var(--paper); font-weight: 650; }
+.rep-col { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.rep-radio { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink); flex-wrap: wrap; }
+.rep-radio input[type="radio"] { margin: 0; accent-color: var(--teal); }
+.rep-dl { font-weight: 600; font-size: 12px; color: var(--amber); background: var(--amber-soft); border-radius: 5px; padding: 1px 6px; }
+.rep-preview { display: flex; flex-direction: column; gap: 6px; padding: 9px 10px; border-radius: 9px; background: var(--panel); }
+.rep-sum { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.rep-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.rep-pills span { font-size: 11.5px; padding: 2px 7px; border-radius: 6px; background: var(--paper); border: 1px solid var(--line); color: var(--muted); }
+.rep-pills span.last { border-color: var(--teal); color: var(--teal); font-weight: 600; }
+.rep-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.tf-menu.rep-edit > * { flex-shrink: 0; }

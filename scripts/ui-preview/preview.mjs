@@ -643,7 +643,8 @@ await shot("panel-multi-select", PANEL, rich(), async (p) => {
 });
 await shot("panel-repeat-editor", PANEL, rich(), async (p) => {
   await p.locator(".task .task-row", { hasText: "Water the plants" }).first().click();
-  await p.locator(".task.open .tf-chip", { hasText: /Every|Weekly/ }).locator(".tf-chip-main").click();
+  // v0.4.70: repeat is an icon right after priority.
+  await p.locator(".task.open").getByRole("button", { name: /^Repeat/ }).click();
   await p.locator(".tf-menu").scrollIntoViewIfNeeded();
 });
 
@@ -1971,7 +1972,7 @@ await shot("full-add-rich", FULL, full({ settings: DARK }), async (p) => {
   await p.waitForTimeout(150);
   if (!(await p.locator(".add-task .tf-chip.set", { hasText: "Tomorrow" }).count())) throw new Error("the typed date didn't fill the date chip");
   if (!(await p.locator(".add-task .tf-chip.set", { hasText: "3:00" }).count())) throw new Error("the typed time didn't fill the time chip");
-  if (!(await p.locator(".add-task .tf-chip.set", { hasText: "Every week" }).count())) throw new Error("the typed repeat didn't show");
+  if (!(await p.locator(".add-task .tf-tool.rep").count())) throw new Error("the typed repeat didn't show");
   if (!(await p.locator(".add-task .tf-tool[aria-label='Priority P1']").count())) throw new Error("p1 didn't set the priority");
   await p.locator(".add-task .tfc-notes").click();
   await p.keyboard.type("Release notes are in the shared doc");
@@ -2007,8 +2008,49 @@ await shot("full-repeat-deadline", FULL, full({ settings: DARK }), async (p) => 
   await p.locator(".task.open").getByRole("button", { name: "Deadline", exact: true }).click();
   await p.locator(".tf-menu .cal button:not([disabled])").filter({ hasText: /^2[0-9]$/ }).last().click();
   await p.waitForTimeout(250);
-  await p.locator(".task.open .tf-chip", { hasText: /Every|Weekly/ }).locator(".tf-chip-main").click();
-  await p.locator(".tf-note", { hasText: "Stops at the deadline" }).waitFor();
+  await p.locator(".task.open").getByRole("button", { name: /^Repeat/ }).click();
+  await p.locator(".tf-note", { hasText: "Ends by the deadline" }).waitFor();
+});
+// v0.4.70: custom repeats, from the repeat icon beside priority.
+await shot("full-repeat-icon", FULL, full({ settings: LIGHT }), async (p) => {
+  await p.locator(".task .task-row", { hasText: "Book flights" }).first().click();
+  await p.waitForTimeout(200);
+  const tools = await p.locator(".task.open .tf-tools .tf-tool").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
+  if (tools.indexOf("Repeat") !== tools.findIndex((l) => /^Priority/.test(l ?? "")) + 1) throw new Error(`repeat isn't right after priority: ${tools.join(", ")}`);
+  await p.locator(".task.open").getByRole("button", { name: "Repeat", exact: true }).click();
+  await p.getByRole("menuitem", { name: "Custom…" }).waitFor();
+});
+await shot("full-repeat-custom", FULL, full({ settings: LIGHT }), async (p) => {
+  await p.locator(".task .task-row", { hasText: "Wrap up the launch notes" }).first().click();
+  await p.waitForTimeout(200);
+  await p.locator(".task.open").getByRole("button", { name: "Repeat", exact: true }).click();
+  await p.getByRole("menuitem", { name: "Custom…" }).click();
+  const ed = p.getByRole("dialog", { name: "Custom repeat" });
+  await ed.getByLabel("How many", { exact: true }).fill("2");
+  for (const d of ["Monday", "Wednesday"]) {
+    const b = ed.getByRole("button", { name: d });
+    if ((await b.getAttribute("aria-pressed")) !== "true") await b.click();
+  }
+  for (const d of ["Sunday", "Tuesday", "Thursday", "Friday", "Saturday"]) {
+    const b = ed.getByRole("button", { name: d });
+    if ((await b.getAttribute("aria-pressed")) === "true") await b.click();
+  }
+  await ed.locator(".rep-sum", { hasText: "Every 2 weeks on Monday, Wednesday" }).waitFor();
+  await ed.getByLabel("How many times").fill("6");
+  await ed.locator(".rep-pills span").nth(5).waitFor();
+  const box = await ed.boundingBox();
+  if (box.y + box.height > (p.viewportSize()?.height ?? 900)) throw new Error("the repeat editor runs off the window");
+  await p.screenshot({ path: `${out}/full-repeat-custom-open.png` });
+  await ed.getByRole("button", { name: "Done" }).click();
+  await p.waitForTimeout(300);
+  const ups = await p.evaluate(() => (window.__updates ?? []).map((u) => u.patch.recurrence).filter(Boolean));
+  if (!ups.includes("rrule:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE;COUNT=6")) throw new Error(`saved ${JSON.stringify(ups)}`);
+});
+await shot("full-repeat-typed", FULL, full({ settings: LIGHT }), async (p) => {
+  await p.getByRole("button", { name: /^Add Task$/ }).click();
+  await p.keyboard.type("Book club the 2nd tuesday of every month");
+  await p.waitForTimeout(150);
+  await p.locator(".add-task .tf-tool.rep", { hasText: "Monthly · 2nd Tue" }).waitFor();
 });
 await shot("full-task-more", FULL, full({ settings: DARK }), async (p) => {
   await p.locator(".task .task-row").nth(1).click();

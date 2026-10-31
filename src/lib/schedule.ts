@@ -8,7 +8,7 @@
  */
 
 import { addDays, type DayOrder, resolveDatePhrase, startOfDay, toISODate } from "./dates";
-import { describe, nextDay, parseRepeat, repeatText, toStored, upcoming, type RepeatRule } from "./repeat";
+import { alignStart, describe, parseRepeat, repeatText, toStored, upcoming, type RepeatRule } from "./repeat";
 
 export type Repeat = "daily" | "weekdays" | "weekly" | "biweekly" | "monthly" | "yearly";
 
@@ -270,8 +270,7 @@ export function resolveSchedule(
   if (rep.custom && !date) {
     // The first day the rule lands on, today included.
     const rule = parseRepeat(repeat);
-    const yesterday = toISODate(addDays(today, -1));
-    if (rule) date = nextDay({ ...rule, until: null, count: null }, yesterday, yesterday);
+    if (rule) date = alignStart(rule, toISODate(today));
   }
   if (rep.repeat) {
     if (rep.weekday !== null) {

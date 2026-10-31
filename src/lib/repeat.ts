@@ -222,6 +222,19 @@ export function nextDay(r: RepeatRule, anchor: string, after: string, doneOn: st
   return r.until && iso > r.until ? null : iso;
 }
 
+/**
+ * The first day on or after `iso` that the rule lands on, for rules that
+ * name their days (weekdays, "the 2nd Tuesday", "the last day"); others
+ * start where they are.
+ */
+export function alignStart(r: RepeatRule, iso: string): string {
+  const named = (r.freq === "week" && r.days.length > 0) || ((r.freq === "month" || r.freq === "year") && r.monthBy !== null);
+  if (!named || r.afterDone) return iso;
+  const before = toIso(toNum(iso) - 1);
+  // Every week (or month) here: the rhythm starts from the day it lands on.
+  return nextDay({ ...r, interval: 1, until: null, count: null }, before, before) ?? iso;
+}
+
 /** Up to `max` days it lands on from `start` (included), stopping at its end, a count or `end` (a deadline). */
 export function upcoming(r: RepeatRule, start: string, end: string | null, max = 120): string[] {
   const out = [start];

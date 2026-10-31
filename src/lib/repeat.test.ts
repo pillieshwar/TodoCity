@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PRESETS, describe as words, nextDay, parseRepeat, repeatBrief, toStored, upcoming } from "./repeat";
+import { PRESETS, alignStart, describe as words, nextDay, parseRepeat, repeatBrief, toStored, upcoming } from "./repeat";
 
 const rule = (s: string) => {
   const r = parseRepeat(s);
@@ -63,6 +63,14 @@ describe("repeat rules", () => {
     expect(nextDay(rule("monthly"), "2026-10-14", "2026-10-14")).toBe("2026-11-14");
     expect(nextDay(rule("yearly"), "2026-10-14", "2026-10-14")).toBe("2027-10-14");
     expect(nextDay(rule("weekly"), "2026-10-05", "2026-10-14")).toBe("2026-10-19");
+  });
+
+  it("moves a task onto the first day the rule names", () => {
+    // Saturday, Oct 31 with "Mon and Wed": Monday, Nov 2.
+    expect(alignStart(rule("rrule:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE"), "2026-10-31")).toBe("2026-11-02");
+    expect(alignStart(rule("rrule:FREQ=WEEKLY;BYDAY=SA"), "2026-10-31")).toBe("2026-10-31");
+    expect(alignStart(rule("rrule:FREQ=MONTHLY;BYDAY=2TU"), "2026-10-31")).toBe("2026-11-10");
+    expect(alignStart(rule("weekly"), "2026-10-31")).toBe("2026-10-31");
   });
 
   it("ends on its date", () => {

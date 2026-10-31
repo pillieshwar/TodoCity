@@ -1,7 +1,7 @@
 import { type CSSProperties, type RefObject, useLayoutEffect, useRef, useState } from "react";
 import { LineIcon } from "./LineIcon";
 import { parseISODate, toISODate } from "../lib/dates";
-import { describe, nextDay, ordinal, parseRepeat, presetRule, toStored, upcoming, type Freq, type RepeatRule } from "../lib/repeat";
+import { alignStart, describe, ordinal, parseRepeat, presetRule, toStored, upcoming, type Freq, type RepeatRule } from "../lib/repeat";
 import type { TaskPatch } from "../lib/types";
 import type { FieldValues } from "./TaskFields";
 
@@ -77,9 +77,8 @@ export function RepeatMenu({
   const set = (r: RepeatRule | null) => {
     if (!r) onChange({ recurrence: null });
     else {
-      const yesterday = toISODate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
-      const first = value.date ?? (r.freq === "week" && r.days.length ? nextDay({ ...r, until: null, count: null }, yesterday, yesterday) : null) ?? start;
-      onChange({ due_date: first, recurrence: toStored(r) });
+      // On the first day the rule names ("Mon, Wed" moves a Saturday task to Monday).
+      onChange({ due_date: alignStart(r, start), recurrence: toStored(r) });
     }
     onClose();
   };
@@ -230,7 +229,7 @@ export function RepeatEditor({
     until: ends === "date" ? (r.until ?? value.deadline ?? start) : null,
     count: ends === "count" ? (r.count ?? 10) : null,
   };
-  const preview = upcoming(final, start, value.deadline, 8);
+  const preview = upcoming(final, alignStart(final, start), value.deadline, 8);
   const box = useRef<HTMLDivElement>(null);
   const fit = useFit(box, `${r.freq}${r.afterDone}${ends}`);
 
@@ -398,7 +397,7 @@ export function RepeatEditor({
           ))}
         </span>
       </div>
-      <EndsNote rule={final} start={start} deadline={value.deadline} locale={locale} />
+      <EndsNote rule={final} start={alignStart(final, start)} deadline={value.deadline} locale={locale} />
 
       <div className="rep-actions">
         <button type="button" className="ghost small" onClick={onCancel}>

@@ -10,7 +10,7 @@
 use chrono::{Duration, NaiveDate, NaiveDateTime};
 use serde_json::{json, Map, Value};
 
-use crate::recurrence::Rule;
+use crate::recurrence::Repeat;
 use crate::store::{ChecklistItem, NewTask, Store, StoreError, Task, TaskPatch};
 
 /// Most tasks one call returns.
@@ -74,7 +74,7 @@ fn id_prop() -> Value {
 const DATE: &str = "YYYY-MM-DD, the user's local date.";
 const TIME: &str = "24-hour HH:MM local time, any minute (e.g. 09:07). Needs a date.";
 const DURATION: &str = "How long it takes, in minutes (1–1440), e.g. 7, 30, 90.";
-const REPEAT: &str = "daily, weekdays, weekly, biweekly, monthly or yearly.";
+const REPEAT: &str = "daily, weekdays, weekly, biweekly, monthly or yearly; or a custom rule like rrule:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE (also BYDAY=2TU or BYMONTHDAY=-1 for months, FROM=DONE to count from when it's finished, UNTIL=YYYYMMDD, COUNT=n). A task's deadline always ends the series.";
 const PRIORITY: &str = "0 none, 1 urgent (P1), 2 high (P2), 3 medium (P3).";
 
 fn tool(
@@ -553,7 +553,7 @@ fn date_arg(a: &Args, key: &str) -> Result<Option<NaiveDate>, String> {
 }
 
 fn check_repeat(r: &str) -> Result<(), String> {
-    Rule::parse(r)
+    Repeat::parse(r)
         .map(|_| ())
         .ok_or_else(|| format!("repeat \"{r}\" isn't one of: {REPEAT}"))
 }

@@ -10,6 +10,8 @@ use chrono::{NaiveDate, Utc};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 
+use crate::recurrence::Repeat;
+
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
     #[error(transparent)]
@@ -50,7 +52,8 @@ pub struct Task {
     pub completed_at: Option<String>,
     /// Local time of day, `HH:MM`; only set together with `due_date`.
     pub due_time: Option<String>,
-    /// Repeat rule (see [`crate::recurrence::Rule`]), e.g. `weekly`.
+    /// Repeat rule (see [`crate::recurrence::Repeat`]): `weekly`, or a
+    /// custom `rrule:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE`.
     pub recurrence: Option<String>,
     /// The app the text was captured in, e.g. `Slack`.
     pub source_app: Option<String>,
@@ -1088,39 +1091,24 @@ impl Store {
     /// day, as if this one had been done.
     pub fn skip(&self, id: i64) -> Result<Task, StoreError> {
         let t = self.get(id)?;
-        let parse = |d: &str| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok();
-        let Some(rule) = t
-            .recurrence
-            .as_deref()
-            .and_then(crate::recurrence::Rule::parse)
-        else {
+        let Some(rule) = t.recurrence.as_deref().and_then(Repeat::parse) else {
             return Ok(t);
         };
-        let base = t
-            .series_date
-            .as_deref()
-            .or(t.due_date.as_deref())
-            .and_then(parse);
-        let today = chrono::Local::now().date_naive();
-        let after = t
-            .due_date
-            .as_deref()
-            .and_then(parse)
-            .map_or(today, |d| d.max(today));
-        let next = crate::recurrence::next_due(rule, base, after);
-        // The deadline ends the series: there's nothing to skip to past it.
-        if t.deadline
-            .as_deref()
-            .and_then(parse)
-            .is_some_and(|dl| next > dl)
-        {
+        // The last one of a counted series: nothing comes after it.
+        if rule.is_last() {
             return Ok(t);
         }
+        let today = chrono::Local::now().date_naive();
+        let Some(next) = next_occurrence(&t, &rule, today) else {
+            return Ok(t);
+        };
         let next = next.format("%Y-%m-%d").to_string();
+        // Skipping uses up one of a counted series.
+        let rule = rule.for_next().to_stored();
         self.conn.execute(
             "UPDATE tasks SET due_date = ?1, series_date = NULL, snoozed_until = NULL,
-                 notified_at = NULL, someday = 0 WHERE id = ?2",
-            params![next, id],
+                 notified_at = NULL, someday = 0, recurrence = ?3 WHERE id = ?2",
+            params![next, id, rule],
         )?;
         self.get(id)
     }
@@ -1246,39 +1234,26 @@ fn map_row(r: &Row<'_>) -> rusqlite::Result<Task> {
 /// Create the next occurrence of repeating task `id` (inside `tx`).
 fn spawn_next(tx: &rusqlite::Transaction<'_>, id: i64) -> Result<Option<i64>, StoreError> {
     let t = tx.query_row(&format!("{SELECT} WHERE id = ?1"), [id], map_row)?;
-    let Some(rule) = t
-        .recurrence
-        .as_deref()
-        .and_then(crate::recurrence::Rule::parse)
-    else {
+    let Some(rule) = t.recurrence.as_deref().and_then(Repeat::parse) else {
         return Ok(None);
     };
+    // The last of a counted series ("after 6 times").
+    if rule.is_last() {
+        return Ok(None);
+    }
     let parse = |d: &str| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok();
-    // The series' own day for this one (it may have been moved on its own).
     let base = t
         .series_date
         .as_deref()
         .or(t.due_date.as_deref())
         .and_then(parse);
     let today = chrono::Local::now().date_naive();
-    // Done early (or moved later on its own): the next one still comes after
-    // the day this one actually had.
-    let after = t
-        .due_date
-        .as_deref()
-        .and_then(parse)
-        .map_or(today, |d| d.max(today));
-    let next_day = crate::recurrence::next_due(rule, base, after);
-    // A deadline is the end of the series: the next one never lands after
-    // it, and when it would, this was the last one.
-    if t.deadline
-        .as_deref()
-        .and_then(parse)
-        .is_some_and(|dl| next_day > dl)
-    {
+    // Past its end date or the deadline: this was the last one.
+    let Some(next_day) = next_occurrence(&t, &rule, today) else {
         return Ok(None);
-    }
+    };
     let next = next_day.format("%Y-%m-%d").to_string();
+    let next_rule = rule.for_next().to_stored();
     // The same next one on every Mac: its uid comes from the series, so two
     // Macs that both finish this occurrence while apart make the same task.
     let uid = next_uid(tx, id, base)?;
@@ -1312,7 +1287,7 @@ fn spawn_next(tx: &rusqlite::Transaction<'_>, id: i64) -> Result<Option<i64>, St
             t.title,
             next,
             t.due_time,
-            t.recurrence,
+            next_rule,
             t.source_text,
             t.source_app,
             t.source_bundle,
@@ -1343,6 +1318,37 @@ fn spawn_next(tx: &rusqlite::Transaction<'_>, id: i64) -> Result<Option<i64>, St
         params![next_id, id],
     )?;
     Ok(Some(next_id))
+}
+
+/// The day after this occurrence of `t`: on the series' rhythm after the
+/// later of its own day and `today` (or from `today` for "after I finish").
+/// `None` when the rule's end date or the task's deadline comes first: a
+/// deadline always ends the series.
+fn next_occurrence(t: &Task, rule: &Repeat, today: NaiveDate) -> Option<NaiveDate> {
+    let parse = |d: &str| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok();
+    // The series' own day for this one (it may have been moved on its own).
+    let base = t
+        .series_date
+        .as_deref()
+        .or(t.due_date.as_deref())
+        .and_then(parse)
+        .unwrap_or(today);
+    // Done early (or moved later on its own): the next one still comes after
+    // the day this one actually had.
+    let after = t
+        .due_date
+        .as_deref()
+        .and_then(parse)
+        .map_or(today, |d| d.max(today));
+    let next = rule.next(base, after, today)?;
+    if t.deadline
+        .as_deref()
+        .and_then(parse)
+        .is_some_and(|dl| next > dl)
+    {
+        return None;
+    }
+    Some(next)
 }
 
 /// The uid of the occurrence that follows task `id`, whose series day is
@@ -1465,8 +1471,8 @@ fn check_time(t: &str) -> Result<String, StoreError> {
 }
 
 fn check_rule(r: &str) -> Result<String, StoreError> {
-    crate::recurrence::Rule::parse(r)
-        .map(|r| r.as_str().to_string())
+    Repeat::parse(r)
+        .map(|r| r.to_stored())
         .ok_or_else(|| StoreError::BadRecurrence(r.to_string()))
 }
 
@@ -2094,6 +2100,85 @@ mod tests {
         // Day 21 would be after day 15: that was the last one.
         let (_, fx) = s
             .update_with_effects(third.id, patch(|p| p.done = Some(true)))
+            .unwrap();
+        assert_eq!(fx.spawned, None);
+    }
+
+    #[test]
+    fn custom_repeats_count_down_and_end() {
+        let s = Store::open_in_memory().unwrap();
+        let t = s
+            .insert(NewTask {
+                title: "Physio exercises".into(),
+                due_date: Some(day(0)),
+                recurrence: Some("rrule:FREQ=DAILY;INTERVAL=3;COUNT=3".into()),
+                ..Default::default()
+            })
+            .unwrap();
+        // Day 0 (3 left) → day 3 (2 left) → day 6 (the last).
+        let (_, fx) = s
+            .update_with_effects(t.id, patch(|p| p.done = Some(true)))
+            .unwrap();
+        let second = s.get(fx.spawned.unwrap()).unwrap();
+        assert_eq!(second.due_date.as_deref(), Some(day(3).as_str()));
+        assert_eq!(
+            second.recurrence.as_deref(),
+            Some("rrule:FREQ=DAILY;INTERVAL=3;COUNT=2")
+        );
+        // Skipping uses one up: day 6 is now the last.
+        let skipped = s.skip(second.id).unwrap();
+        assert_eq!(skipped.due_date.as_deref(), Some(day(6).as_str()));
+        assert_eq!(
+            skipped.recurrence.as_deref(),
+            Some("rrule:FREQ=DAILY;INTERVAL=3;COUNT=1")
+        );
+        assert_eq!(
+            s.skip(second.id).unwrap().due_date.as_deref(),
+            Some(day(6).as_str())
+        );
+        let (_, fx) = s
+            .update_with_effects(second.id, patch(|p| p.done = Some(true)))
+            .unwrap();
+        assert_eq!(fx.spawned, None);
+    }
+
+    #[test]
+    fn custom_repeats_stop_at_the_deadline_and_are_stored_plainly() {
+        let s = Store::open_in_memory().unwrap();
+        // A custom rule that is really a preset is stored as the preset,
+        // so older versions on other Macs read it.
+        let t = s
+            .insert(NewTask {
+                title: "Team notes".into(),
+                due_date: Some(day(0)),
+                recurrence: Some("rrule:FREQ=WEEKLY".into()),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(t.recurrence.as_deref(), Some("weekly"));
+        assert!(s
+            .update(
+                t.id,
+                patch(|p| p.recurrence = Some(Some("every tuesday".into())))
+            )
+            .is_err());
+        let t = s
+            .update(
+                t.id,
+                patch(|p| {
+                    p.recurrence = Some(Some("rrule:FREQ=DAILY;INTERVAL=4".into()));
+                    p.deadline = Some(Some(day(6)));
+                }),
+            )
+            .unwrap();
+        let (_, fx) = s
+            .update_with_effects(t.id, patch(|p| p.done = Some(true)))
+            .unwrap();
+        let next = s.get(fx.spawned.unwrap()).unwrap();
+        assert_eq!(next.due_date.as_deref(), Some(day(4).as_str()));
+        // Day 8 would be past the deadline (day 6).
+        let (_, fx) = s
+            .update_with_effects(next.id, patch(|p| p.done = Some(true)))
             .unwrap();
         assert_eq!(fx.spawned, None);
     }

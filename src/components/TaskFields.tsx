@@ -5,7 +5,9 @@ import { LineIcon } from "./LineIcon";
 import type { ProjectInfo } from "./ProjectPicker";
 import { useProjectColor } from "../lib/colors";
 import { addDays, dayOrderForLocale, daysBetween, parseISODate, relativeLabel, toISODate } from "../lib/dates";
-import { REPEATS, repeatDates, repeatLabel, resolveSchedule, timeLabel } from "../lib/schedule";
+import { repeatLabel, resolveSchedule, timeLabel } from "../lib/schedule";
+import { parseRepeat, repeatBrief } from "../lib/repeat";
+import { EndsNote, RepeatMenu } from "./RepeatMenu";
 import { PRIORITIES, priorityColor } from "../lib/taskText";
 import { DURATION_PRESETS, durationLabel, parseDuration } from "../lib/timeblock";
 import type { TaskPatch } from "../lib/types";
@@ -30,8 +32,8 @@ export type FieldMenu = "place" | "date" | "time" | "length" | "repeat" | "prior
 
 /**
  * The fields of a task as one quiet row: where it goes, its day and time
- * (and repeat, once set) as chips on the left; priority, deadline, tags and
- * more as grey icons on the right. Each opens one small menu under it.
+ * as chips on the left; priority, repeat, deadline, tags and more as grey
+ * icons on the right. Each opens one small menu under it.
  * Used the same way when adding a task and when one is open.
  */
 export function TaskFields({
@@ -211,25 +213,6 @@ export function TaskFields({
           </span>
         )}
 
-        {value.repeat && (
-          <span className="tf-anchor">
-            <Chip
-              set
-              on={menu === "repeat"}
-              icon="repeat"
-              label={`${repeatLabel(value.repeat) ?? "Repeats"}${value.paused ? " · paused" : ""}`}
-              title="Repeat"
-              onClick={() => toggle("repeat")}
-              onClear={() => onChange({ recurrence: null })}
-            />
-            {menu === "repeat" && <RepeatMenu value={value} now={now} locale={locale} series={series} onChange={onChange} onClose={close} />}
-          </span>
-        )}
-        {!value.repeat && menu === "repeat" && (
-          <span className="tf-anchor">
-            <RepeatMenu value={value} now={now} locale={locale} series={series} onChange={onChange} onClose={close} />
-          </span>
-        )}
       </div>
 
       <div className="tf-tools">
@@ -283,6 +266,26 @@ export function TaskFields({
               </button>
             </div>
           )}
+        </span>
+
+        {/* Repeat, right after priority: always here, its rule in a few words once set. */}
+        <span className="tf-anchor">
+          <button
+            type="button"
+            className={["tf-tool tf-trigger", value.repeat ? "rep" : "", menu === "repeat" ? "on" : ""].filter(Boolean).join(" ")}
+            onClick={() => toggle("repeat")}
+            aria-label={value.repeat ? `Repeat: ${repeatLabel(value.repeat) ?? "custom"}` : "Repeat"}
+            title={value.repeat ? `${repeatLabel(value.repeat) ?? "Repeats"}${value.paused ? " · paused" : ""}` : "Repeat"}
+          >
+            <LineIcon name="repeat" size={17} />
+            {value.repeat && (
+              <span>
+                {repeatBrief(value.repeat, value.date ?? today, locale) ?? "Repeats"}
+                {value.paused ? " · paused" : ""}
+              </span>
+            )}
+          </button>
+          {menu === "repeat" && <RepeatMenu value={value} now={now} locale={locale} series={series} onChange={onChange} onClose={close} />}
         </span>
 
         <span className="tf-anchor">
@@ -560,103 +563,6 @@ function DateMenu({
   );
 }
 
-function RepeatMenu({
-  value,
-  now,
-  locale,
-  series,
-  onChange,
-  onClose,
-}: {
-  value: FieldValues;
-  now: Date;
-  locale: string;
-  series?: { onSkip: () => void; onPause: (paused: boolean) => void };
-  onChange: (patch: TaskPatch) => void;
-  onClose: () => void;
-}) {
-  const today = toISODate(now);
-  const start = value.date ?? today;
-  const startDay = parseISODate(start);
-  const hint: Record<string, string> = {
-    weekly: `on ${startDay.toLocaleDateString(locale, { weekday: "long" })}`,
-    biweekly: `on ${startDay.toLocaleDateString(locale, { weekday: "long" })}`,
-    monthly: `on the ${ordinal(startDay.getDate())}`,
-  };
-  const pick = (r: string | null) => {
-    onChange(r ? { due_date: start, recurrence: r } : { recurrence: null });
-    onClose();
-  };
-  return (
-    <div className="tf-menu" role="menu" aria-label="Repeat">
-      <div className="tf-head">Repeat</div>
-      <button type="button" role="menuitemradio" aria-checked={!value.repeat} className={!value.repeat ? "tf-opt sel" : "tf-opt"} onClick={() => pick(null)}>
-        Never
-      </button>
-      {REPEATS.map((r) => (
-        <button
-          key={r.id}
-          type="button"
-          role="menuitemradio"
-          aria-checked={value.repeat === r.id}
-          className={value.repeat === r.id ? "tf-opt sel" : "tf-opt"}
-          onClick={() => pick(r.id)}
-        >
-          {r.label}
-          {hint[r.id] && <em>{hint[r.id]}</em>}
-        </button>
-      ))}
-      {value.repeat && value.deadline && <DeadlineNote value={value} now={now} locale={locale} />}
-      {series && value.repeat && (
-        <div className="tf-pair">
-          <button
-            type="button"
-            onClick={() => {
-              series.onSkip();
-              onClose();
-            }}
-          >
-            Skip this one
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              series.onPause(!value.paused);
-              onClose();
-            }}
-          >
-            {value.paused ? "Resume" : "Pause"}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** How a deadline ends a repeating task: its last day, in words. */
-function DeadlineNote({ value, now, locale }: { value: FieldValues; now: Date; locale: string }) {
-  if (!value.repeat || !value.deadline) return null;
-  const start = value.date ?? toISODate(now);
-  const days = repeatDates(start, value.repeat, value.deadline);
-  const fmt = (iso: string) => parseISODate(iso).toLocaleDateString(locale, { weekday: "short", month: "short", day: "numeric" });
-  const last = days[days.length - 1];
-  return (
-    <div className="tf-note">
-      <LineIcon name="target" size={16} />
-      <div>
-        <b>Stops at the deadline</b>
-        <span>
-          {last
-            ? last === value.deadline
-              ? `The last one is on the deadline, ${fmt(last)}. No repeats after it.`
-              : `Deadline ${fmt(value.deadline)} — the last one is ${fmt(last)}. No repeats after it.`
-            : `The deadline (${fmt(value.deadline)}) is before this one, so it won't repeat.`}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function DeadlineMenu({
   value,
   now,
@@ -690,7 +596,9 @@ function DeadlineMenu({
       {value.deadline && value.date && value.deadline < value.date && !value.repeat && (
         <p className="tf-help">This is before the day it's planned for.</p>
       )}
-      {value.repeat && value.deadline && <DeadlineNote value={value} now={now} locale={locale} />}
+      {value.repeat && value.deadline && parseRepeat(value.repeat) && (
+        <EndsNote rule={parseRepeat(value.repeat)!} start={value.date ?? toISODate(now)} deadline={value.deadline} locale={locale} />
+      )}
       {value.deadline && (
         <button
           type="button"
@@ -851,10 +759,4 @@ function PlaceRow({ name, sel, onClick }: { name: string; sel: boolean; onClick:
       {name}
     </button>
   );
-}
-
-function ordinal(n: number): string {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }

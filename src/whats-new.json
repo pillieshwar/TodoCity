@@ -1,4 +1,11 @@
 {
+  "0.4.70": [
+    "Repeat has its own button, right after priority",
+    "Repeat any way you like: every 3 days, every other Monday and Wednesday, the 2nd Tuesday of the month, the last day of the month",
+    "\"After I finish\": the next one counts from the day you finish it",
+    "End a series on a date or after a number of times, and see the next days before you save; a deadline always ends it",
+    "Type it: \"every other tuesday\", \"the last day of every month\", \"every weekday until dec 18\""
+  ],
   "0.4.69": [
     "A calmer header: whose tasks to show (yours, everything, or what agents changed) and List or Board now live in one View button",
     "Agent changes are marked quietly, with the agent's icon: \"Scheduled by Claude\"",

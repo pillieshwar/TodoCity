@@ -174,7 +174,7 @@ The sidebar's switch at the top picks a **mode**. In **Work**, Today, Calendar, 
 - Notifications with **Done**, **Snooze** and **Tomorrow** — or one morning summary instead.
 - When a task's time comes, the menu-bar dropdown opens on just that task, everything else blurred. It never takes your keyboard.
 - Once a day, it asks you to plan tasks that have no date, one tap each.
-- Repeating tasks schedule the next one when you finish; skip one or pause the series any time.
+- **Repeats your way** — the repeat button sits right after priority: every N days, weeks, months or years, on chosen weekdays, "the 2nd Tuesday", "the last day", or counted from when you finish. End on a date or after a number of times; a deadline always ends the series. Type it too: "every other Tuesday", "every weekday until Dec 18". Skip one, pause or stop any time.
 
 <br clear="right">
 

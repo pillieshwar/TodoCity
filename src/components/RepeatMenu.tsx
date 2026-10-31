@@ -126,8 +126,8 @@ export function RepeatMenu({
               {value.paused ? "Resume" : "Pause"}
             </button>
           )}
-          <button type="button" onClick={() => set(null)}>
-            Stop repeating
+          <button type="button" title="Stop repeating" onClick={() => set(null)}>
+            Stop
           </button>
         </div>
       )}

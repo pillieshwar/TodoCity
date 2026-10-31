@@ -2038,6 +2038,8 @@ await shot("full-repeat-custom", FULL, full({ settings: LIGHT }), async (p) => {
   await ed.locator(".rep-sum", { hasText: "Every 2 weeks on Monday, Wednesday" }).waitFor();
   await ed.getByLabel("How many times").fill("6");
   await ed.locator(".rep-pills span").nth(5).waitFor();
+  const box = await ed.boundingBox();
+  if (box.y + box.height > (p.viewportSize()?.height ?? 900)) throw new Error("the repeat editor runs off the window");
   await p.screenshot({ path: `${out}/full-repeat-custom-open.png` });
   await ed.getByRole("button", { name: "Done" }).click();
   await p.waitForTimeout(300);

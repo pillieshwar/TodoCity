@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import type { DropTarget } from "./plan";
 import type { Task } from "./types";
 import { snapMinute } from "./timeblock";
+import { markDragged } from "./hints";
 
 export interface DragState {
   task: Task;
@@ -111,7 +112,10 @@ export function useTaskDrag(onDrop: (task: Task, to: DropTarget) => void) {
       setDrag(null);
       // The click that ends a drag fires before this timeout; later clicks count.
       if (moved.current) window.setTimeout(() => (moved.current = false), 0);
-      if (d?.over) dropRef.current(d.task, d.over);
+      if (d?.over) {
+        markDragged();
+        dropRef.current(d.task, d.over);
+      }
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);

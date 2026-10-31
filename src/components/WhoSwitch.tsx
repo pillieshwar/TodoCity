@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
-import { byAgent, markLabel, type Who } from "../lib/agents";
+import { createContext, useContext, useEffect, useRef } from "react";
+import { agentIdOf, byAgent, markLabel } from "../lib/agents";
+import { AgentTile } from "./AgentPanel";
 import type { AgentChange, Task } from "../lib/types";
 
 /** What lists need to mark agents' tasks: each task's latest agent change, and Undo in the Agents view. */
@@ -13,16 +14,16 @@ export interface AgentMarksValue {
 }
 export const AgentMarks = createContext<AgentMarksValue>({ latest: new Map(), now: new Date() });
 
-/** "Claude scheduled", for a task an agent touched (and Undo in the Agents view). */
+/** "Scheduled by Claude", for a task an agent touched (and Undo in the Agents view). */
 export function AgentMark({ task }: { task: Task }) {
   const m = useContext(AgentMarks);
   if (!m.on || !byAgent(task, m.now)) return null;
   const c = m.latest.get(task.id);
   return (
     <>
-      <span className="agent-mark">
-        <AgentIcon size={10} />
-        {c ? markLabel(c) : "By an agent"}
+      <span className="agent-mark" title={c?.summary}>
+        {c && agentIdOf(c.agent) ? <AgentTile agent={agentIdOf(c.agent)} size={14} /> : <AgentIcon size={11} />}
+        {c ? markLabel(c) : "Changed by an agent"}
       </span>
       {m.undo && (
         <button type="button" className="agent-undo" data-nodrag onClick={(e) => { e.stopPropagation(); m.undo!(task.id); }} title={c?.summary}>
@@ -38,63 +39,11 @@ export function useIsAgentTask(task: Task): boolean {
   return !!m.on && byAgent(task, m.now);
 }
 
-const PersonIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-    <circle cx="8" cy="5.5" r="2.8" />
-    <path d="M2.8 14c.6-2.8 2.7-4.3 5.2-4.3s4.6 1.5 5.2 4.3" />
-  </svg>
-);
-
 export const AgentIcon = ({ size = 13 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
     <path d="M8 1.8l1.4 3.6 3.8.4-2.9 2.5.9 3.8L8 10.1l-3.2 2 .9-3.8L2.8 5.8l3.8-.4z" />
   </svg>
 );
-
-/**
- * You · All · Agents, in the header: whose tasks the lists show. "Agents" is
- * what AI apps added or changed in the last 7 days. With agents not set up,
- * it offers to set them up instead of showing an empty list.
- */
-export function WhoSwitch({
-  who,
-  onWho,
-  agentCount,
-  setUp,
-  onSetUp,
-}: {
-  who: Who;
-  onWho: (w: Who) => void;
-  agentCount: number;
-  setUp: boolean;
-  onSetUp: () => void;
-}) {
-  const opt = (w: Who, label: string, extra?: ReactNode, icon?: ReactNode) => (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={who === w}
-      className={who === w ? "who-opt on" : "who-opt"}
-      onClick={() => (w === "agents" && !setUp ? onSetUp() : onWho(w))}
-    >
-      {icon}
-      {label}
-      {extra}
-    </button>
-  );
-  return (
-    <div className={who === "agents" ? "who-switch agents" : "who-switch"} role="radiogroup" aria-label="Show tasks from">
-      {opt("you", "You", null, <PersonIcon />)}
-      {opt("all", "All")}
-      {opt(
-        "agents",
-        "Agents",
-        !setUp ? <span className="who-setup">Set up</span> : agentCount > 0 && who !== "agents" ? <span className="who-count">{agentCount}</span> : null,
-        <AgentIcon />,
-      )}
-    </div>
-  );
-}
 
 /** Agents aren't on yet: what they'd do, and where to turn them on. */
 export function AgentsSetUpDialog({ onSetUp, onClose }: { onSetUp: () => void; onClose: () => void }) {

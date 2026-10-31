@@ -30,9 +30,21 @@ const VERBS: Record<string, string> = {
   deleted: "deleted",
 };
 
-/** "Claude scheduled", "Cursor added". */
+/** "Scheduled by Claude", "Added by Cursor". */
 export function markLabel(c: Pick<AgentChange, "agent" | "kind">): string {
-  return `${c.agent} ${VERBS[c.kind] ?? "changed"}`;
+  const verb = VERBS[c.kind] ?? "changed";
+  return `${verb[0].toUpperCase()}${verb.slice(1)} by ${c.agent}`;
+}
+
+/** The agent id behind a name an agent gave ("Claude Code" → "claude"), for its icon. */
+export function agentIdOf(name: string): string | null {
+  const n = name.toLowerCase();
+  if (n.includes("codex") || n.includes("chatgpt") || n.includes("openai")) return "codex";
+  if (n.includes("claude")) return "claude";
+  if (n.includes("cursor")) return "cursor";
+  if (n.includes("antigravity")) return "antigravity";
+  if (n.includes("gemini")) return "gemini";
+  return null;
 }
 
 /** Each task's latest change that isn't undone. */

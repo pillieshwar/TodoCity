@@ -1,4 +1,13 @@
 {
+  "0.4.69": [
+    "A calmer header: whose tasks to show (yours, everything, or what agents changed) and List or Board now live in one View button",
+    "Agent changes are marked quietly, with the agent's icon: \"Scheduled by Claude\"",
+    "Short tasks in Calendar stay readable: one tidy line, the full title on hover, and a crowded hour folds into \"+2\"",
+    "Beside Today: just this week and your hours, since the list already shows the rest",
+    "Updates no longer interrupt you: a small \"Update ready\" in the corner when a new version is downloaded",
+    "Email to tasks is gone: Watch already turns what's on your screen into tasks",
+    "Repeating tasks show a small repeat icon on their line"
+  ],
   "0.4.68": [
     "Watch can send to the agent you already use: pick Claude Code, Codex, Antigravity, Gemini or Cursor in Settings → Watch, or keep an open model on your Mac",
     "Agents have their own page in Settings: connect Claude Code, Codex, Antigravity CLI, Cursor and more to TodoCity in one click",

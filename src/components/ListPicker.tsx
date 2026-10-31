@@ -150,7 +150,15 @@ export function Pie({ done, total, size = 14 }: { done: number; total: number; s
     <svg className="pie" width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-label={`${done} of ${total} done`}>
       <circle cx={c} cy={c} r={r} fill="none" stroke="currentColor" strokeWidth="1.4" />
       {frac >= 1 ? (
-        <circle cx={c} cy={c} r={ri} fill="currentColor" />
+        // All done: a check, so it reads as finished rather than a dot.
+        <path
+          d={`M${c - r * 0.45} ${c + r * 0.02} L${c - r * 0.1} ${c + r * 0.38} L${c + r * 0.5} ${c - r * 0.35}`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       ) : frac > 0 ? (
         <path
           d={`M${c} ${c} L${c} ${c - ri} A${ri} ${ri} 0 ${frac > 0.5 ? 1 : 0} 1 ${c + ri * Math.sin(angle)} ${c - ri * Math.cos(angle)} Z`}

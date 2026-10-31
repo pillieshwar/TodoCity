@@ -50,10 +50,6 @@ upstream project.
   which are never read, and any app the user skips. It never reads text fields or password fields, keeps only
   hashes of lines it has seen (in memory), and sends nothing off the Mac;
   the on-device model's suggestions go to the review inbox.
-- **Scheduled email checks** (off by default) run Claude Code with only two
-  kinds of tools allowed: the user's chosen mail server and TodoCity's
-  `add_task`. The `/email-tasks` prompt treats email as untrusted and never
-  sends, moves or deletes mail. TodoCity never reads the mail itself.
 - **Local model.** The model runtime
   listens on `127.0.0.1` only, on a random port with a random key.
 - **Signed updates.** Every in-app update is verified against the project's

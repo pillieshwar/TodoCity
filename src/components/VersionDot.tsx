@@ -9,11 +9,10 @@ const REPO = "https://github.com/pillieshwar/TodoCity";
 const WHATS_NEW: Record<string, string[]> = whatsNew;
 
 /**
- * The version, at the right of full screen's footer, with a dot: green on
- * the latest version, red when a newer one is out. Click it for what's new,
- * the release notes, a star on GitHub and, when there's a newer one, Update
- * — which gets it (if it isn't downloaded yet) and restarts into it. A newer
- * version opens the card by itself once; after that the red pill waits.
+ * Full screen's footer, right side: nothing while TodoCity is up to date
+ * (the version lives in Settings → General → Updates). When a new version
+ * has downloaded, one quiet "Update ready" pill; click it for what's new and
+ * Update, which restarts into it. No banner, no badge elsewhere.
  */
 export function VersionDot({ update, version, onError }: { update: UpdateStatus; version: string | null; onError: (m: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -22,25 +21,7 @@ export function VersionDot({ update, version, onError }: { update: UpdateStatus;
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const newer = update.state === "ready" || update.state === "downloading";
-  const tone = newer ? "red" : update.state === "failed" ? "gray" : "green";
-  // Open by itself the first time a given version is ready.
-  useEffect(() => {
-    if (update.state !== "ready") return;
-    let seen: string | null = null;
-    try {
-      seen = localStorage.getItem("todocity.updateSeen");
-    } catch {
-      // No storage: open it this once.
-    }
-    if (seen === update.version) return;
-    setOpen(true);
-    try {
-      localStorage.setItem("todocity.updateSeen", update.version);
-    } catch {
-      // The card may open again next launch.
-    }
-  }, [update]);
-
+  const tone = newer ? "ready" : update.state === "failed" ? "gray" : "green";
   useEffect(() => {
     if (!open) return;
     const close = (e: PointerEvent) => {
@@ -92,15 +73,13 @@ export function VersionDot({ update, version, onError }: { update: UpdateStatus;
   const notesFor = update.state === "ready" && nextNotes.length ? update.version : version;
   const notes = update.state === "ready" && nextNotes.length ? nextNotes : version ? (WHATS_NEW[version] ?? []) : [];
 
+  // Quiet until there's something to do.
+  if (update.state !== "ready" && !busy && !wanted && !open) return null;
   return (
     <div className={open ? "vdot-wrap open" : "vdot-wrap"} ref={ref}>
       <button type="button" className={`vdot ${tone}`} aria-expanded={open} title={label} onClick={() => setOpen((o) => !o)}>
         <span className="vdot-dot" aria-hidden />
-        {busy
-          ? "Updating…"
-          : newer
-            ? `Update to ${"version" in update ? update.version : ""}`
-            : `TodoCity ${version ?? ""}`}
+        {busy ? "Updating…" : "Update ready"}
       </button>
       {open && (
         <div className="vdot-pop" role="dialog" aria-label="Version">

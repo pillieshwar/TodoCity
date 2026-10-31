@@ -21,6 +21,8 @@ interface Props {
   /** Clicking a task's title. */
   onOpen: (task: Task) => void;
   compact?: boolean;
+  /** Just the hours: the list beside it shows the untimed tasks. */
+  hoursOnly?: boolean;
 }
 
 /** Where the inline "new task" field is: an hour, or Anytime. */
@@ -32,7 +34,7 @@ type AddAt = number | "any" | null;
  * to Anytime, or onto a day; click an empty block to add a task there; tick
  * a task and it leaves the plan.
  */
-export function DayPlan({ tasks, day, today, now, locale, events, actions, drag, onAdd, onOpen, compact }: Props) {
+export function DayPlan({ tasks, day, today, now, locale, events, actions, drag, onAdd, onOpen, compact, hoursOnly }: Props) {
   const colors = useProjectColors();
   const plan = useMemo(() => planFor(tasks, day, today), [tasks, day, today]);
   const evs = useMemo(() => eventsForDay(events, day), [events, day]);
@@ -147,26 +149,29 @@ export function DayPlan({ tasks, day, today, now, locale, events, actions, drag,
   const nowHour = now.getHours();
   return (
     <div className={compact ? "plan compact" : "plan"}>
-      <div
-        className={["plan-any", over?.iso === day && over.hour === null ? "drop" : ""].filter(Boolean).join(" ")}
-        data-iso={day}
-        data-hour="any"
-      >
-        <div className="plan-any-head">
-          <span className="plan-label">All day</span>
-          {addAt !== "any" && (
-            <button type="button" className="plan-add-any" onClick={() => setAddAt("any")} aria-label="Add a task for any time">
-              +
-            </button>
+      {!hoursOnly && (
+        <div
+          className={["plan-any", over?.iso === day && over.hour === null ? "drop" : ""].filter(Boolean).join(" ")}
+          data-iso={day}
+          data-hour="any"
+        >
+          <div className="plan-any-head">
+            <span className="plan-label">All day</span>
+            {addAt !== "any" && (
+              <button type="button" className="plan-add-any" onClick={() => setAddAt("any")} aria-label="Add a task for any time">
+                +
+              </button>
+            )}
+          </div>
+          {evs.allDay.map(eventChip)}
+          {plan.anytime.map(chip)}
+          {addAt === "any" && field("any")}
+          {plan.anytime.length === 0 && evs.allDay.length === 0 && addAt !== "any" && (
+            <p className="plan-hint">{drag.drag ? "Drop here to do it any time" : "Untimed tasks show here"}</p>
           )}
         </div>
-        {evs.allDay.map(eventChip)}
-        {plan.anytime.map(chip)}
-        {addAt === "any" && field("any")}
-        {plan.anytime.length === 0 && evs.allDay.length === 0 && addAt !== "any" && (
-          <p className="plan-hint">{drag.drag ? "Drop here to do it any time" : "Untimed tasks show here"}</p>
-        )}
-      </div>
+      )}
+      {hoursOnly && evs.allDay.length > 0 && <div className="plan-any slim">{evs.allDay.map(eventChip)}</div>}
 
       <div className="plan-hours" ref={hoursRef} data-autoscroll>
         {hours.map((h) => {

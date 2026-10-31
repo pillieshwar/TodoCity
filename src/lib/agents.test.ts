@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentCounts, agentsBy, byAgent, filterWho, latestBatch, latestByTask, markLabel } from "./agents";
+import { agentCounts, agentsBy, byAgent, filterWho, latestBatch, latestByTask, markLabel, agentIdOf } from "./agents";
 import type { AgentChange, Task } from "./types";
 
 const NOW = new Date("2026-11-02T10:00:00Z");
@@ -34,8 +34,15 @@ describe("who made a task", () => {
 
 describe("agent labels", () => {
   it("says who did what", () => {
-    expect(markLabel({ agent: "Claude", kind: "scheduled" })).toBe("Claude scheduled");
-    expect(markLabel({ agent: "Cursor", kind: "weird" })).toBe("Cursor changed");
+    expect(markLabel({ agent: "Claude", kind: "scheduled" })).toBe("Scheduled by Claude");
+    expect(markLabel({ agent: "Cursor", kind: "weird" })).toBe("Changed by Cursor");
+  });
+  it("finds the icon for an agent's name", () => {
+    expect(agentIdOf("Claude Code")).toBe("claude");
+    expect(agentIdOf("claude-desktop")).toBe("claude");
+    expect(agentIdOf("Codex")).toBe("codex");
+    expect(agentIdOf("Cursor")).toBe("cursor");
+    expect(agentIdOf("My script")).toBeNull();
   });
   it("uses each task's latest change that still stands", () => {
     const m = latestByTask([change(1, 7), change(3, 7, { kind: "moved" }), change(4, 8, { undone: true })]);

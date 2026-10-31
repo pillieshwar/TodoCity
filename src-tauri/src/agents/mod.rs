@@ -18,7 +18,6 @@
 #![cfg_attr(not(unix), allow(dead_code))]
 
 pub mod apps;
-pub mod email;
 pub mod mcp;
 
 use std::collections::VecDeque;
@@ -650,7 +649,6 @@ pub fn start(app: &AppHandle) {
             .name("agents-repair".into())
             .spawn(move || apps::repair(&command));
     }
-    email::start(app);
     #[cfg(unix)]
     {
         let socket = app.state::<Agents>().socket.clone();

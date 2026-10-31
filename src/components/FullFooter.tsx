@@ -6,9 +6,8 @@ import { VersionDot } from "./VersionDot";
 /**
  * Full screen's footer, kept slim: the model reading captures on the left,
  * a small skyline of your city in the middle (it glows when someone moves
- * in), and the version on the right — green when it's the latest, red when
- * there's a newer one. What's new, release notes and GitHub are in the
- * version's pop-up.
+ * in), and on the right an "Update ready" pill only when a new version is
+ * downloaded.
  */
 export function FullFooter({
   model,

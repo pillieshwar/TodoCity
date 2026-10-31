@@ -59,7 +59,6 @@ interface Props {
   onColor: (project: string, color: string | null) => void;
   /** Stop keeping a project in sync with Things 3 or Todoist. */
   onStopSync?: (project: string) => void;
-  updateReady: boolean;
   /** The window's close, minimize and zoom buttons. */
   lights: ReactElement;
   /** The mode switcher (Work, Personal…), under the title. */
@@ -527,7 +526,6 @@ export function Sidebar(p: Props) {
             aria-pressed={p.inSettings}
           >
             <LineIcon name="gear" size={19} />
-            {p.updateReady && <span className="sb-dot" aria-hidden />}
           </button>
         </div>
       </div>

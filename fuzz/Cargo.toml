@@ -3,7 +3,7 @@ name = "todocity-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2021"
-license = "PolyForm-Noncommercial-1.0.0"
+license = "MIT"
 description = "Fuzz tests for todocity-core: everything that reads untrusted input."
 
 [package.metadata]

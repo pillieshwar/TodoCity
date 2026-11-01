@@ -310,7 +310,7 @@ gh attestation verify ~/Downloads/TodoCity-macOS.dmg --repo pillieshwar/TodoCity
 | <kbd>⇧⌘Space</kbd> | Quick add — type a task |
 | <kbd>⇧⌘H</kbd> | Show or hide TodoCity (handy over full-screen apps, where the menu bar is hidden) |
 
-**In the task list** — press <kbd>?</kbd> to see them in the app:
+**In the task list** — press <kbd>?</kbd> to see them in the app, and click any letter key there to pick your own (a key that's taken swaps with it):
 
 | Key | Action | Key | Action |
 | --- | --- | --- | --- |

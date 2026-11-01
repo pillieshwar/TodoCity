@@ -27,6 +27,7 @@ pub mod agent_llm;
 pub mod agent_log;
 pub mod agent_runs;
 pub mod agent_tools;
+pub mod app_keys;
 pub mod calendar_sync;
 pub mod clipboard_guard;
 pub mod data_folder;

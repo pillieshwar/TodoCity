@@ -1887,6 +1887,34 @@ await shot("full-keys", FULL, full({ settings: DARK }), async (p) => {
   await p.locator(".km-card").waitFor();
   if ((await p.locator(".km-card .keycap").count()) < 1) throw new Error("no shortcut to record");
 });
+// v0.4.72: pick your own keys for actions in task lists.
+const openKeys = async (p) => {
+  await p.getByRole("button", { name: "Keyboard shortcuts" }).first().click();
+  await p.locator(".km-card").waitFor();
+};
+await shot("full-keys-pick", FULL, full({ settings: LIGHT }), async (p) => {
+  await openKeys(p);
+  await p.getByRole("button", { name: "Tomorrow: M. Change key" }).click();
+  await p.locator(".km-cap.recording").waitFor();
+  await p.keyboard.press("y");
+  await p.getByRole("button", { name: "Tomorrow: Y. Change key" }).waitFor();
+  await p.getByRole("button", { name: "Use the usual keys" }).waitFor();
+});
+await shot("full-keys-swap", FULL, full({ settings: LIGHT }), async (p) => {
+  await openKeys(p);
+  await p.getByRole("button", { name: "Tomorrow: M. Change key" }).click();
+  await p.keyboard.press("d");
+  await p.locator(".km-mine-foot", { hasText: "Date, time and repeat is on M now." }).waitFor();
+  await p.getByRole("button", { name: "Date, time and repeat: M. Change key" }).waitFor();
+});
+await shot("full-keys-in-use", FULL, full({ settings: { ...LIGHT, app_keys: { tomorrow: "y" } } }), async (p) => {
+  await p.keyboard.press("ArrowDown");
+  await p.waitForTimeout(150);
+  await p.keyboard.press("y");
+  await p.waitForTimeout(300);
+  const ups = await p.evaluate(() => window.__updates ?? []);
+  if (!ups.some((u) => u.patch?.due_date === day(1))) throw new Error(`Y didn't move the task to tomorrow: ${JSON.stringify(ups)}`);
+});
 // The week's columns line up from the day names down through the hours.
 await shot("full-week-aligned", FULL, full({ settings: DARK }), async (p) => {
   await side(/Calendar/)(p);

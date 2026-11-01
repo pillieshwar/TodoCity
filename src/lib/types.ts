@@ -196,6 +196,8 @@ export interface AppSettings {
   mode?: string | null;
   /** Open in full screen when TodoCity starts. */
   open_full?: boolean;
+  /** Keys changed for actions in task lists (`appKeys.ts` action id → key). */
+  app_keys?: Record<string, string>;
 }
 
 /** Mirrors `todocity_core::modes::ViewMode`: which projects a Mac shows. */

@@ -773,6 +773,7 @@ fn set_settings(app: AppHandle, settings: State<'_, Settings>, value: AppSetting
         v.modes = todocity_core::modes::clean(value.modes);
         v.mode = value.mode.filter(|id| v.modes.iter().any(|m| &m.id == id));
         v.open_full = value.open_full;
+        v.app_keys = todocity_core::app_keys::clean(value.app_keys);
     });
     tray::refresh(&app);
     let _ = app.emit("calendar-changed", ());

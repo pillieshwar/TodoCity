@@ -99,6 +99,9 @@ pub struct AppSettings {
     pub mode: Option<String>,
     /// Open in full screen when TodoCity starts (or is opened again).
     pub open_full: bool,
+    /// Keys the person changed for actions in task lists (`app_keys::ACTIONS`
+    /// id → key). Unchanged ones aren't stored.
+    pub app_keys: std::collections::BTreeMap<String, String>,
 }
 
 /// Limits for the right-hand pane's width.
@@ -293,6 +296,7 @@ impl Default for AppSettings {
             modes: ViewMode::defaults(),
             mode: Some("personal".into()),
             open_full: true,
+            app_keys: Default::default(),
         }
     }
 }

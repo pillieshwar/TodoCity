@@ -3491,3 +3491,10 @@ button.tf-chip { cursor: pointer; }
 .wg-event.lifted { cursor: grabbing; z-index: 5; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18), 0 0 0 1.5px var(--ev); }
 .week-grid.moving-event, .week-grid.moving-event * { cursor: grabbing !important; user-select: none; }
 .move-dialog { max-width: 400px; }
+
+/* Keyboard shortcuts: keys you can change */
+.km-cap { min-width: 30px; padding: 3px 8px; font: 600 12px/1.2 var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); text-align: center; }
+.km-cap.changed { border-color: var(--teal); color: var(--teal); }
+.km-mine-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 26px; margin: 4px 2px 10px; font-size: 12px; color: var(--muted); }
+.km-reset { border: 0; background: none; color: var(--teal); font: inherit; font-weight: 600; cursor: pointer; padding: 2px 0; }
+.km-fixed { margin-top: 2px; }

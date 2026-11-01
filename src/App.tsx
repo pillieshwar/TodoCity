@@ -1,3 +1,4 @@
+import { actionFor, keyMap } from "./lib/appKeys";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CaptureCard, type CaptureState } from "./components/CaptureCard";
 import { Onboarding } from "./components/Onboarding";
@@ -108,23 +109,12 @@ function remember(key: string, value: string) {
   }
 }
 
+/** Keys that stay as they are; the rest are changeable (`APP_ACTIONS`). */
 const KEYS: [string, string][] = [
   ["↑ ↓", "Move between tasks"],
-  ["Space", "Complete"],
-  ["E / ↵", "Edit title"],
-  ["D", "Date, time and repeat"],
-  ["T · M · W", "Today · tomorrow · next week"],
-  ["O", "Open where it came from"],
   ["⌫", "Delete"],
   ["⌘Z", "Undo"],
   ["⌘-click · ⇧-click", "Select several (⌘A all)"],
-  ["S", "Snooze"],
-  ["N", "Description"],
-  ["A", "Add a task"],
-  ["F", "Today ↔ Inbox"],
-  ["C", "Sub-tasks (checklist)"],
-  ["P", "Move to a project"],
-  ["V", "Today as a list or in hours"],
   ["← →", "Day before / after (Calendar)"],
   ["/ or ⌘F", "Search"],
   ["⌃⌘F", "Full screen ↔ side panel"],
@@ -844,6 +834,9 @@ export default function App() {
   // Keyboard: Esc, undo, search and list navigation.
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  // The keys the person picked for actions (T for today…), in the shortcuts sheet.
+  const keysRef = useRef(keyMap(settings?.app_keys));
+  keysRef.current = keyMap(settings?.app_keys);
   const keyState = useRef({ flat, focusId, capture, tab, query, showKeys, upcoming, selectedTasks, openId, searchOpen, full, cityOpen });
   keyState.current = { flat, focusId, capture, tab, query, showKeys, upcoming, selectedTasks, openId, searchOpen, full, cityOpen };
   useEffect(() => {
@@ -917,12 +910,12 @@ export default function App() {
       }
       if (s.upcoming && !typingIn(e.target) && !mod && !e.altKey && !s.capture) {
         // The week has no list to move through; its own few keys.
-        const k = e.key.toLowerCase();
+        const act = actionFor(e.key, keysRef.current);
         let used = true;
-        if (k === "a") setAdding(true);
-        else if (k === "f") setList("today");
+        if (act === "add") setAdding(true);
+        else if (act === "today_inbox") setList("today");
         else if (e.key === "?") setShowKeys((v) => !v);
-        else if (k === "t") setPlanDay(toISODate(new Date()));
+        else if (act === "today") setPlanDay(toISODate(new Date()));
         else if (e.key === "ArrowLeft") setPlanDay((d) => toISODate(addDays(parseISODate(d), s.full ? -7 : -1)));
         else if (e.key === "ArrowRight") setPlanDay((d) => toISODate(addDays(parseISODate(d), s.full ? 7 : 1)));
         else used = false;
@@ -938,15 +931,15 @@ export default function App() {
       // With a selection, the usual keys act on all of it.
       const sel = s.selectedTasks;
       if (sel.length && !typingIn(e.target) && !mod && !e.altKey && !s.capture) {
-        const k = e.key.toLowerCase();
+        const act = actionFor(e.key, keysRef.current);
         const iso = (n: number) => toISODate(addDays(new Date(), n));
         const what = sel.length === 1 ? "1 task" : `${sel.length} tasks`;
         let used = true;
-        if (e.key === " " || k === "x") void actions.completeMany(sel).then(() => setSelected(new Set()));
+        if (e.key === " " || act === "complete") void actions.completeMany(sel).then(() => setSelected(new Set()));
         else if (e.key === "Backspace" || e.key === "Delete") void actions.removeMany(sel).then(() => setSelected(new Set()));
-        else if (k === "t") void actions.batch(sel, { due_date: iso(0) }, `Moved ${what} to today`);
-        else if (k === "m") void actions.batch(sel, { due_date: iso(1) }, `Moved ${what} to tomorrow`);
-        else if (k === "w") void actions.batch(sel, { due_date: iso(7) }, `Moved ${what} to next week`);
+        else if (act === "today") void actions.batch(sel, { due_date: iso(0) }, `Moved ${what} to today`);
+        else if (act === "tomorrow") void actions.batch(sel, { due_date: iso(1) }, `Moved ${what} to tomorrow`);
+        else if (act === "next_week") void actions.batch(sel, { due_date: iso(7) }, `Moved ${what} to next week`);
         else used = false;
         if (used) {
           e.preventDefault();
@@ -972,7 +965,7 @@ export default function App() {
       };
       const n = Date.now();
       const key = e.key;
-      const lower = key.toLowerCase();
+      const act = actionFor(key, keysRef.current);
       let handled = true;
       if ((key === "ArrowDown" || key === "ArrowUp") && e.shiftKey) {
         // Shift+↑/↓ grows the selection from the focused task.
@@ -989,25 +982,25 @@ export default function App() {
           });
           setFocusId(next.id);
         }
-      } else if (key === "ArrowDown" || lower === "j") move(1);
-      else if (key === "ArrowUp" || lower === "k") move(-1);
+      } else if (key === "ArrowDown" || act === "next") move(1);
+      else if (key === "ArrowUp" || act === "previous") move(-1);
       else if (key === "?") setShowKeys((v) => !v);
-      else if (lower === "f") setFocusToday((v) => !v);
-      else if (lower === "a") setAdding(true);
-      else if (lower === "v") setTodayMode((m) => (m === "list" ? "hours" : "list"));
+      else if (act === "today_inbox") setFocusToday((v) => !v);
+      else if (act === "add") setAdding(true);
+      else if (act === "view") setTodayMode((m) => (m === "list" ? "hours" : "list"));
       else if (!current) handled = false;
-      else if (key === " " || lower === "x") void actions.setDone(current, !current.done);
-      else if (key === "Enter" || lower === "e") setCommand({ id: current.id, kind: "edit", n });
+      else if (key === " " || act === "complete") void actions.setDone(current, !current.done);
+      else if (key === "Enter" || act === "edit") setCommand({ id: current.id, kind: "edit", n });
       else if (key === "ArrowRight") setOpenId(current.id);
-      else if (lower === "d") setCommand({ id: current.id, kind: "date", n });
-      else if (lower === "s") setCommand({ id: current.id, kind: "snooze", n });
-      else if (lower === "n") setCommand({ id: current.id, kind: "notes", n });
-      else if (lower === "c") setCommand({ id: current.id, kind: "steps", n });
-      else if (lower === "p") setCommand({ id: current.id, kind: "project", n });
-      else if (lower === "t") void actions.reschedule(current, { due_date: toISODate(new Date()) });
-      else if (lower === "m") void actions.reschedule(current, { due_date: toISODate(addDays(new Date(), 1)) });
-      else if (lower === "w") void actions.reschedule(current, { due_date: toISODate(addDays(new Date(), 7)) });
-      else if (lower === "o" && (current.source_url || current.source_bundle))
+      else if (act === "date") setCommand({ id: current.id, kind: "date", n });
+      else if (act === "snooze") setCommand({ id: current.id, kind: "snooze", n });
+      else if (act === "notes") setCommand({ id: current.id, kind: "notes", n });
+      else if (act === "steps") setCommand({ id: current.id, kind: "steps", n });
+      else if (act === "project") setCommand({ id: current.id, kind: "project", n });
+      else if (act === "today") void actions.reschedule(current, { due_date: toISODate(new Date()) });
+      else if (act === "tomorrow") void actions.reschedule(current, { due_date: toISODate(addDays(new Date(), 1)) });
+      else if (act === "next_week") void actions.reschedule(current, { due_date: toISODate(addDays(new Date(), 7)) });
+      else if (act === "source" && (current.source_url || current.source_bundle))
         void api.openSource(current.id).catch(actions.fail);
       else if (key === "Backspace" || key === "Delete") {
         move(1);
@@ -1510,7 +1503,10 @@ export default function App() {
 
   const keysSheet = showKeys && (
     <KeysModal
-      keys={KEYS.filter(([k]) => !full || k !== "V")}
+      keys={KEYS}
+      appKeys={settings?.app_keys ?? {}}
+      onAppKeys={(app_keys) => void patchSettings({ app_keys })}
+      hideActions={full ? ["view"] : []}
       shortcuts={shortcuts}
       onShortcuts={setShortcuts}
       doubleCopy={settings?.double_copy !== false}

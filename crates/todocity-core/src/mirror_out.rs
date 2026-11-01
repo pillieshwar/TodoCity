@@ -23,7 +23,8 @@
 //!   other app keeps its copy, and it never comes back here.
 //! * A repeating task finished here → finished there (the other app moves
 //!   it to its next date), and the link moves to the occurrence TodoCity
-//!   made, so the series continues on both sides without doubling.
+//!   made, so the series continues on both sides without doubling. That
+//!   next occurrence is never added there as a new task.
 //! * Projects kept on this Mac only send nothing.
 //! * Changes that just arrived from another of the person's Macs wait a few
 //!   minutes before anything that can't safely happen twice (adding a task,
@@ -294,6 +295,9 @@ impl Store {
         }
         let linked = links.len();
         let mut deletes: Vec<Op> = Vec::new();
+        // Next occurrences of linked repeats: the link moves to them once
+        // the other app moves on, so they're never added there as new.
+        let mut followers: HashSet<i64> = HashSet::new();
         for (ext, task, old) in links {
             let Some(id) = task else {
                 if !kept_here(&project_of.get(&old.building).cloned()) {
@@ -302,6 +306,11 @@ impl Store {
                 continue;
             };
             let t = self.get(id)?;
+            if t.done && t.recurrence.is_some() {
+                if let Some(next) = self.next_occurrence(id)? {
+                    followers.insert(next);
+                }
+            }
             if kept_here(&t.project) {
                 continue;
             }
@@ -360,6 +369,9 @@ impl Store {
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
             .collect::<Result<_, _>>()?;
         for (id, project, uid) in rows {
+            if followers.contains(&id) {
+                continue;
+            }
             let Some(building) = key_of.get(&project.to_lowercase()).cloned() else {
                 continue;
             };

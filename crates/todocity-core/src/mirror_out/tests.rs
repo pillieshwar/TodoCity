@@ -484,9 +484,12 @@ fn a_repeat_finished_here_moves_on_there_once() {
     mac.pass(&mut app);
     assert_eq!(app.closed["a"], 1);
     assert_eq!(app.get("a").task.due_date.as_deref(), Some("2027-03-08"));
+    // The next one here is the same task there, not a new one.
+    assert_eq!(app.items.len(), 2);
     for _ in 0..3 {
         mac.pass(&mut app);
     }
+    assert_eq!(app.items.len(), 2);
     assert_eq!(app.closed["a"], 1);
     assert!(mac.store.get(first).unwrap().done);
     let n = mac.store.get(next).unwrap();
@@ -759,6 +762,7 @@ fn a_repeat_finished_on_one_mac_moves_on_there_once() {
     }
     assert_eq!(app.closed["a"], 1);
     assert_eq!(app.get("a").task.due_date.as_deref(), Some("2027-03-08"));
+    assert_eq!(app.items.len(), 2);
     for mac in [&a, &b] {
         let all = mac.store.all().unwrap();
         let tulips: Vec<_> = all.iter().filter(|t| t.title == "Plant tulips").collect();

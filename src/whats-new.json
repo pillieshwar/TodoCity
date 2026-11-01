@@ -1,4 +1,10 @@
 {
+  "0.4.74": [
+    "Todoist now syncs both ways: change, add, finish or delete a task in either app and the other follows",
+    "Rather keep it one-way? Switch it in Settings → Connectors → Todoist",
+    "Todoist and Things 3 now live in Settings → Connectors, with how to move in behind the (i)",
+    "Repeating tasks move on once in both apps, even with two Macs"
+  ],
   "0.4.73": [
     "TodoCity is now open source under the MIT License: use it, change it and share it, including at work",
     "Everything stays free, and the code is on GitHub for anyone to read"

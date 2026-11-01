@@ -38,6 +38,7 @@ pub mod llm;
 pub mod local_models;
 pub mod meeting_move;
 pub mod mirror;
+pub mod mirror_out;
 pub mod models;
 pub mod modes;
 pub mod notify;
@@ -48,6 +49,7 @@ pub mod store;
 pub mod sync;
 pub mod things;
 pub mod todoist;
+pub mod todoist_push;
 pub mod transcript;
 
 pub use extraction::{DateConfidence, Extraction, ExtractionError};

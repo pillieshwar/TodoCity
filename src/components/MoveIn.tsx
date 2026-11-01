@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, onMirrorChanged, onTodoistProgress } from "../lib/api";
 import { Toggle } from "./GeneralSettings";
+import { InfoTip } from "./InfoTip";
 import type { ImportReport, MirrorLink, MirrorSource, ThingsOptions, ThingsPreviewData } from "../lib/types";
-
-type Source = "things" | "todoist";
 
 /** What a preview shows, whichever app it came from. */
 interface Found {
@@ -59,56 +58,11 @@ const TODOIST_MAP: [string, string][] = [
   ["Completed tasks", "Done tasks — lit windows in your city (with a token)"],
 ];
 
-function savedSource(): Source {
-  try {
-    return localStorage.getItem("todocity.transfer") === "todoist" ? "todoist" : "things";
-  } catch {
-    return "things";
-  }
-}
-
 /**
- * Data transfer: move everything in from another app — Things 3 (read on
- * this Mac) or Todoist (over its API with your token, or from CSV files).
+ * Moving in from Things 3 (read on this Mac) or Todoist (over its API with
+ * your token, or from CSV files), and keeping it in sync afterwards. Each
+ * lives in its card in Settings → Connectors; how it works is behind (i).
  */
-export function DataTransferTab({ onFinished }: { onFinished: () => void }) {
-  const [source, setSource] = useState<Source>(savedSource);
-  useEffect(() => {
-    try {
-      localStorage.setItem("todocity.transfer", source);
-    } catch {
-      // Remembered for this session only.
-    }
-  }, [source]);
-  return (
-    <div className="transfer">
-      <div className="tr-sources" role="tablist" aria-label="Import from">
-        {(
-          [
-            ["things", "Things 3", "Reads it on this Mac", <ThingsGlyph key="g" />],
-            ["todoist", "Todoist", "With your API token, or CSV files", <TodoistGlyph key="g" />],
-          ] as [Source, string, string, ReactNode][]
-        ).map(([id, name, sub, glyph]) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={source === id}
-            className={source === id ? "tr-source on" : "tr-source"}
-            onClick={() => setSource(id)}
-          >
-            {glyph}
-            <span>
-              <b>{name}</b>
-              <small>{sub}</small>
-            </span>
-          </button>
-        ))}
-      </div>
-      {source === "things" ? <ThingsMoveIn onFinished={onFinished} /> : <TodoistMoveIn onFinished={onFinished} />}
-    </div>
-  );
-}
 
 /** Shared state for one move-in: options, skipped buildings, the phase. */
 function useMoveIn() {
@@ -161,9 +115,9 @@ function ago(iso: string | null): string {
   return new Date(iso).toLocaleDateString();
 }
 
-/** Shown while an app is kept in sync: how it's going, Sync now, Stop. */
+/** Shown while an app is kept in sync: how it's going, which way, Sync now, Stop. */
 function SyncCard({ source, app, link, onChange }: { source: MirrorSource; app: string; link: MirrorLink; onChange: () => void }) {
-  const [busy, setBusy] = useState<"now" | "stop" | null>(null);
+  const [busy, setBusy] = useState<"now" | "stop" | "way" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const run = async (what: "now" | "stop") => {
     setBusy(what);
@@ -171,6 +125,18 @@ function SyncCard({ source, app, link, onChange }: { source: MirrorSource; app: 
     try {
       if (what === "now") await api.mirrorSyncNow(source);
       else await api.mirrorStop(source);
+    } catch (e) {
+      setProblem(String(e));
+    } finally {
+      setBusy(null);
+      onChange();
+    }
+  };
+  const setWay = async (on: boolean) => {
+    setBusy("way");
+    setProblem(null);
+    try {
+      await api.mirrorSetTwoWay(source, on);
     } catch (e) {
       setProblem(String(e));
     } finally {
@@ -190,9 +156,23 @@ function SyncCard({ source, app, link, onChange }: { source: MirrorSource; app: 
           </p>
         </div>
       </div>
+      {link.can_two_way && (
+        <Toggle
+          checked={link.two_way}
+          disabled={busy !== null}
+          onChange={(v) => void setWay(v)}
+          label="Two-way sync"
+          hint={
+            link.two_way
+              ? `Edit in either app; changes go both ways. When the same thing changes in both, ${app}'s change is kept.`
+              : `Changes in ${app} come in here. Your edits here stay in TodoCity.`
+          }
+        />
+      )}
       <p className="tr-sync-text">
-        Changes in {app} flow in here on their own. Edit anything in TodoCity — your change stays until the same thing changes
-        in {app}. Nothing is sent back. To stop one project, use its ⋯ menu.
+        {link.two_way
+          ? `Tasks you add to a synced project here go to ${app} too. To stop one project, use its ⋯ menu.`
+          : `Edit anything in TodoCity — your change stays until the same thing changes in ${app}. To stop one project, use its ⋯ menu.`}
       </p>
       {error && (
         <p className="tr-sync-error" role="alert">
@@ -211,7 +191,7 @@ function SyncCard({ source, app, link, onChange }: { source: MirrorSource; app: 
   );
 }
 
-function ThingsMoveIn({ onFinished }: { onFinished: () => void }) {
+export function ThingsConnector({ onFinished }: { onFinished: () => void }) {
   const m = useMoveIn();
   const { link, reload } = useLink("things");
   const { phase, setPhase, includeDone, includeCanceled } = m;
@@ -258,20 +238,13 @@ function ThingsMoveIn({ onFinished }: { onFinished: () => void }) {
 
   return (
     <>
-      <header className="tr-hero">
-        <ThingsGlyph />
-        <div>
-          <h2 className="tr-title">Import from Things 3</h2>
-          <p className="tr-sub">
-            Projects, headings, to-dos, checklists and Logbook — and keep them in sync. Things isn't changed.
-          </p>
-        </div>
-      </header>
-
       {link && phase.kind !== "done" && <SyncCard source="things" app="Things" link={link} onChange={reload} />}
 
       {!link && phase.kind !== "done" && (
-        <ol className="tr-steps">
+        <HowTo
+          intro="Projects, headings, to-dos, checklists and the Logbook come in, and keep flowing in."
+          map={<MapTable from="Things 3" rows={THINGS_MAP} foot="Trashed to-dos stay behind. Projects you've finished come with their to-dos as done." />}
+        >
           <li>
             <b>Open Things 3 on this Mac</b> and let it finish syncing, so this Mac has all your to-dos. Only use
             Things on iPhone or iPad? Install Things 3 for Mac and sign in to Things Cloud first.
@@ -288,7 +261,7 @@ function ThingsMoveIn({ onFinished }: { onFinished: () => void }) {
             <b>Click Import.</b> TodoCity backs itself up first. With <b>Keep in sync</b> on, whatever changes in Things
             keeps flowing in.
           </li>
-        </ol>
+        </HowTo>
       )}
 
       {!link && (phase.kind === "idle" || phase.kind === "error" || phase.kind === "reading") && (
@@ -354,12 +327,11 @@ function ThingsMoveIn({ onFinished }: { onFinished: () => void }) {
         <DonePanel report={phase.report} app="Things" synced={!!link} onFinished={onFinished} onAgain={() => setPhase({ kind: "idle" })} />
       )}
 
-      <MapTable from="Things 3" rows={THINGS_MAP} foot="Trashed to-dos stay behind. Projects you've finished come with their to-dos as done." />
     </>
   );
 }
 
-function TodoistMoveIn({ onFinished }: { onFinished: () => void }) {
+export function TodoistConnector({ onFinished }: { onFinished: () => void }) {
   const m = useMoveIn();
   const { phase, setPhase, includeDone, priorityTags } = m;
   const [token, setToken] = useState("");
@@ -425,20 +397,19 @@ function TodoistMoveIn({ onFinished }: { onFinished: () => void }) {
 
   return (
     <>
-      <header className="tr-hero">
-        <TodoistGlyph />
-        <div>
-          <h2 className="tr-title">Import from Todoist</h2>
-          <p className="tr-sub">
-            Projects, sections, tasks, labels, comments and completed tasks — and keep them in sync. Todoist isn't changed.
-          </p>
-        </div>
-      </header>
-
       {link && phase.kind !== "done" && <SyncCard source="todoist" app="Todoist" link={link} onChange={reload} />}
 
       {!link && phase.kind !== "done" && (
-        <ol className="tr-steps">
+        <HowTo
+          intro="Projects, sections, tasks, labels, comments and completed tasks come in, then stay in sync both ways."
+          map={
+            <MapTable
+              from="Todoist"
+              rows={TODOIST_MAP}
+              foot="Deleted tasks stay behind. Archived projects only come for their completed tasks. Custom repeats come once, with a note so you can pick a repeat."
+            />
+          }
+        >
           <li>
             <b>Copy your API token from Todoist.</b> In Todoist (web or app) open <b>Settings → Integrations → Developer</b>{" "}
             and click <b>Copy API token</b>.
@@ -452,10 +423,11 @@ function TodoistMoveIn({ onFinished }: { onFinished: () => void }) {
             tasks.
           </li>
           <li>
-            <b>Click Import.</b> TodoCity backs itself up first. With <b>Keep in sync</b> on, whatever changes in
-            Todoist keeps flowing in; your token is kept in the macOS Keychain for that, and deleted when you stop.
+            <b>Click Import.</b> TodoCity backs itself up first. With <b>Keep in sync</b> on, changes go both ways
+            (you can switch to one-way any time); your token is kept in the macOS Keychain for that, and deleted when you
+            stop.
           </li>
-        </ol>
+        </HowTo>
       )}
 
       {!link && (phase.kind === "idle" || phase.kind === "error" || phase.kind === "reading") && (
@@ -516,6 +488,7 @@ function TodoistMoveIn({ onFinished }: { onFinished: () => void }) {
           found={phase.found}
           app="Todoist"
           canSync={kind === "api"}
+          twoWay
           unit="task"
           loose="Inbox (tasks with no project)"
           toggles={
@@ -539,14 +512,9 @@ function TodoistMoveIn({ onFinished }: { onFinished: () => void }) {
       )}
 
       {phase.kind === "done" && (
-        <DonePanel report={phase.report} app="Todoist" synced={!!link} onFinished={onFinished} onAgain={() => setPhase({ kind: "idle" })} />
+        <DonePanel report={phase.report} app="Todoist" synced={!!link} twoWay={!!link?.two_way} onFinished={onFinished} onAgain={() => setPhase({ kind: "idle" })} />
       )}
 
-      <MapTable
-        from="Todoist"
-        rows={TODOIST_MAP}
-        foot="Deleted tasks stay behind. Archived projects only come for their completed tasks. Custom repeats come once, with a note so you can pick a repeat."
-      />
     </>
   );
 }
@@ -557,6 +525,7 @@ function PreviewPanel({
   found,
   app,
   canSync,
+  twoWay = false,
   unit,
   loose,
   toggles,
@@ -568,6 +537,8 @@ function PreviewPanel({
   app: string;
   /** Keep in sync is possible (not for CSV files). */
   canSync: boolean;
+  /** Keeping in sync goes both ways. */
+  twoWay?: boolean;
   unit: string;
   loose: string;
   toggles: ReactNode;
@@ -614,7 +585,11 @@ function PreviewPanel({
             checked={m.keepSync}
             onChange={m.setKeepSync}
             label="Keep in sync"
-            hint={`Changes in ${app} keep flowing in. Your edits here stay; nothing is sent back.`}
+            hint={
+              twoWay
+                ? `Changes go both ways: edit here or in ${app}. You can switch to one-way any time.`
+                : `Changes in ${app} keep flowing in. Your edits here stay.`
+            }
           />
         )}
         {toggles}
@@ -688,12 +663,14 @@ function DonePanel({
   report,
   app,
   synced,
+  twoWay = false,
   onFinished,
   onAgain,
 }: {
   report: ImportReport;
   app: string;
   synced: boolean;
+  twoWay?: boolean;
   onFinished: () => void;
   onAgain: () => void;
 }) {
@@ -706,7 +683,10 @@ function DonePanel({
           : "Everything was already here — nothing new to import."}
         {report.skipped > 0 && ` ${plural(report.skipped, "task")} were already here.`}
         {report.failed > 0 && ` ${plural(report.failed, "task")} stayed in ${app} — import again to bring them over.`}
-        {synced && ` From now on, changes in ${app} flow in on their own.`}
+        {synced &&
+          (twoWay
+            ? ` From now on, ${app} and TodoCity stay in sync both ways.`
+            : ` From now on, changes in ${app} flow in on their own.`)}
       </p>
       <p className="tr-small">
         A backup from just before is in Settings → Backups & export, if you want to undo this. Moved-in tasks aren't sent to
@@ -726,11 +706,11 @@ function DonePanel({
   );
 }
 
+/** What goes where, as a small table for an (i). */
 function MapTable({ from, rows, foot }: { from: string; rows: [string, string][]; foot: string }) {
   return (
-    <details className="tr-map">
-      <summary>What goes where</summary>
-      <table>
+    <>
+      <table className="tr-map-table">
         <thead>
           <tr>
             <th>{from}</th>
@@ -746,8 +726,22 @@ function MapTable({ from, rows, foot }: { from: string; rows: [string, string][]
           ))}
         </tbody>
       </table>
-      <p className="tr-small">{foot}</p>
-    </details>
+      <p>{foot}</p>
+    </>
+  );
+}
+
+/** One line on what comes in, with the steps and the map behind (i)s. */
+function HowTo({ intro, map, children }: { intro: string; map: ReactNode; children: ReactNode }) {
+  return (
+    <div className="tr-howto">
+      <p>{intro}</p>
+      <span className="tr-howto-tips">
+        How to move in <InfoTip label="How to move in" wide text={<ol className="tr-steps">{children}</ol>} />
+        <span aria-hidden>·</span>
+        What goes where <InfoTip label="What goes where" wide text={map} />
+      </span>
+    </div>
   );
 }
 
@@ -761,7 +755,7 @@ function Stat({ value, label }: { value: number; label: string }) {
 }
 
 /** A plain check-in-a-square mark (not Things' own logo). */
-function ThingsGlyph() {
+export function ThingsGlyph() {
   return (
     <svg className="tr-glyph" viewBox="0 0 40 40" aria-hidden="true">
       <rect x="2" y="2" width="36" height="36" rx="9" fill="#2f7bf5" />
@@ -772,7 +766,7 @@ function ThingsGlyph() {
 }
 
 /** A plain list-with-a-tick mark in red (not Todoist's own logo). */
-function TodoistGlyph() {
+export function TodoistGlyph() {
   return (
     <svg className="tr-glyph" viewBox="0 0 40 40" aria-hidden="true">
       <rect x="2" y="2" width="36" height="36" rx="9" fill="#e4553f" />

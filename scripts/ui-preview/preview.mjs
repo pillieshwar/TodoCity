@@ -418,13 +418,19 @@ function mockTauri(s) {
     },
     things_import: (a) => {
       if (a.keepInSync) {
-        s.mirror = { todoist: null, ...(s.mirror ?? {}), things: { since: new Date().toISOString(), last: new Date().toISOString(), error: null, projects: 4 } };
+        s.mirror = { todoist: null, ...(s.mirror ?? {}), things: { since: new Date().toISOString(), last: new Date().toISOString(), error: null, projects: 4, two_way: false, can_two_way: false } };
         setTimeout(() => window.__emit?.("mirror-changed", null), 0);
       }
       return { added: 543, done: 496, skipped: 0, failed: 0 };
     },
     mirror_status: () => s.mirror ?? { things: null, todoist: null },
     mirror_sync_now: () => null,
+    mirror_set_two_way: (a) => {
+      const l = s.mirror?.[a.source];
+      if (l) s.mirror = { ...s.mirror, [a.source]: { ...l, two_way: a.on } };
+      setTimeout(() => window.__emit?.("mirror-changed", null), 0);
+      return null;
+    },
     mirror_stop: (a) => {
       s.mirror = { ...(s.mirror ?? {}), [a.source]: null };
       return null;
@@ -452,7 +458,13 @@ function mockTauri(s) {
         preview: { buildings, open: 46, done: done ? 335 : 0, someday: 0, repeating: 6, subtasks: 38, canceled: 0, unmapped_repeats: 2, already: 0 },
       };
     },
-    todoist_import: () => ({ added: 381, done: 335, skipped: 0, failed: 0 }),
+    todoist_import: (a) => {
+      if (a.keepInSync) {
+        s.mirror = { things: null, ...(s.mirror ?? {}), todoist: { since: new Date().toISOString(), last: new Date().toISOString(), error: null, projects: 3, two_way: true, can_two_way: true } };
+        setTimeout(() => window.__emit?.("mirror-changed", null), 0);
+      }
+      return { added: 381, done: 335, skipped: 0, failed: 0 };
+    },
     save_city_image: () => "/Users/sam/Downloads/Lumen Bay.png",
     set_panel_full: (a) => {
       s.full = a.full;
@@ -561,7 +573,13 @@ async function shot(name, size, s, steps = async () => {}, dark = false) {
 const PANEL = { width: 360, height: 720 };
 /** Settings live behind the gear; open it, then the tab. */
 /** Settings pages by their old tab names too. */
-const PAGE_NAMES = { Preferences: "General", Models: "Open models", "AI model": "Open models", Connectors: "Calendar & Reminders", "Data transfer": "Import Data" };
+const PAGE_NAMES = { Preferences: "General", Models: "Open models", "AI model": "Open models", "Data transfer": "Connectors", "Import Data": "Connectors" };
+/** Open an app's card in Settings → Connectors. */
+const openApp = async (p, name) => {
+  await tab(p, "Connectors");
+  await p.locator(".connector", { hasText: name }).first().locator(".connector-action").click();
+  await p.waitForTimeout(150);
+};
 const tab = async (p, name) => {
   const label = PAGE_NAMES[name] ?? name;
   const item = () => p.locator(".set-item", { hasText: new RegExp(`^.?${label}`) }).first();
@@ -881,7 +899,7 @@ await shot(
   }),
   async (p) => {
     await tab(p, "Connectors");
-    await p.locator(".connector-action").nth(1).click();
+    await p.locator(".connector", { hasText: "Apple Reminders" }).locator(".connector-action").click();
   },
 );
 await shot("panel-update-downloading", PANEL, scenario({ update: { state: "downloading", version: "0.4.5", percent: 40 } }), async (p) => {
@@ -1006,11 +1024,11 @@ await shot("panel-connectors-sync-join", PANEL, scenario({ sync: SYNC_BASE }), a
 });
 await shot("panel-connectors-calendar", PANEL, scenario({ calendar: CAL_ON }), async (p) => {
   await tab(p, "Connectors");
-  await p.locator(".connector-action").first().click();
+  await p.locator(".connector", { hasText: "Apple Calendar" }).locator(".connector-action").click();
 });
 await shot("panel-connectors-reminders", PANEL, scenario(), async (p) => {
   await tab(p, "Connectors");
-  await p.locator(".connector-action").nth(1).click();
+  await p.locator(".connector", { hasText: "Apple Reminders" }).locator(".connector-action").click();
 });
 await shot("popover-events", POP, scenario({ label: "popover", calendar: CAL_ON, events: EVENTS }));
 await shot("popover-events-dark", POP, scenario({ label: "popover", calendar: CAL_ON, events: EVENTS }), async () => {}, true);
@@ -1177,7 +1195,7 @@ await shot("panel-connectors-agents-deleted", PANEL, scenario({ agents: AGENTS_F
 // v0.4.64: tasks in Apple Calendar, one calendar per project under Work and Personal.
 await shot("panel-connectors-calendar-sync", PANEL, scenario({}), async (p) => {
   await tab(p, "Connectors");
-  await p.locator(".connector-action").first().click();
+  await p.locator(".connector", { hasText: "Apple Calendar" }).locator(".connector-action").click();
   const sw = p.getByRole("switch", { name: /^Put my tasks in Calendar/ });
   await sw.scrollIntoViewIfNeeded();
   await p.getByRole("combobox", { name: "Account for TodoCity's calendars" }).selectOption("icloud");
@@ -1664,7 +1682,7 @@ await shot("full-settings", FULL, full({ settings: DARK }), async (p) => {
   await p.locator(".sidebar").getByRole("button", { name: /^Settings/ }).click();
   await p.waitForTimeout(200);
 });
-for (const [name, page] of [["notifications", "Notifications"], ["capture", "Capture & shortcuts"], ["city", "Your city"], ["sync", "Your other Macs"], ["connectors", "Calendar & Reminders"], ["agents", "Agents"], ["watch", "Watch"], ["models", "Open models"], ["help", "Help"], ["backups", "Backups & export"]]) {
+for (const [name, page] of [["notifications", "Notifications"], ["capture", "Capture & shortcuts"], ["city", "Your city"], ["sync", "Your other Macs"], ["connectors", "Connectors"], ["agents", "Agents"], ["watch", "Watch"], ["models", "Open models"], ["help", "Help"], ["backups", "Backups & export"]]) {
   await shot(`full-settings-${name}`, FULL, full({ settings: DARK }), async (p) => await tab(p, page));
 }
 await shot("full-customize", FULL, full({ settings: DARK }), async (p) => {
@@ -1674,7 +1692,7 @@ await shot("full-customize", FULL, full({ settings: DARK }), async (p) => {
   if ((await p.evaluate(() => document.documentElement.dataset.accent)) !== "green") throw new Error("the accent color didn't change");
 });
 await shot("full-transfer", FULL, full({ settings: DARK }), async (p) => {
-  await tab(p, "Import Data");
+  await openApp(p, "Things 3");
   await p.getByRole("button", { name: "Find my Things library" }).click();
   await p.waitForTimeout(200);
   await p.locator(".tr-list li", { hasText: "Trip to Lisbon" }).locator("input").click();
@@ -1682,46 +1700,89 @@ await shot("full-transfer", FULL, full({ settings: DARK }), async (p) => {
   if (label !== "Import 534 to-dos") throw new Error(`move-in count wrong: ${label}`);
 });
 await shot("full-transfer-todoist", FULL, full({ settings: DARK }), async (p) => {
-  await tab(p, "Import Data");
-  await p.getByRole("tab", { name: /Todoist/ }).click();
+  await openApp(p, "Todoist");
   await p.getByLabel("Todoist API token").fill("bad-token");
-  await p.getByRole("button", { name: "Connect", exact: true }).click();
+  await p.locator(".tr-token").getByRole("button", { name: "Connect", exact: true }).click();
   await p.locator(".tr-error").waitFor();
   await p.getByLabel("Todoist API token").fill("good-token");
-  await p.getByRole("button", { name: "Connect", exact: true }).click();
+  await p.locator(".tr-token").getByRole("button", { name: "Connect", exact: true }).click();
   await p.locator(".tr-preview").waitFor();
   const label = await p.locator(".tr-preview .primary").textContent();
   if (label !== "Import 381 tasks") throw new Error(`move-in count wrong: ${label}`);
   if ((await p.getByLabel("Todoist API token").count()) !== 0) throw new Error("the token field should be gone after connecting");
 });
 await shot("full-transfer-todoist-csv", FULL, full({ settings: DARK }), async (p) => {
-  await tab(p, "Import Data");
-  await p.getByRole("tab", { name: /Todoist/ }).click();
+  await openApp(p, "Todoist");
   await p.getByText("No token? Use CSV files instead").click();
   await p.getByRole("button", { name: "Choose CSV files…" }).click();
   await p.locator(".tr-preview").waitFor();
   if (!(await p.getByRole("switch", { name: /Bring completed tasks/ }).isDisabled())) throw new Error("completed tasks should be off for CSV");
 });
-await shot("full-transfer-syncing", FULL, full({ settings: DARK, mirror: { things: { since: "2026-10-20T10:00:00Z", last: new Date(Date.now() - 120_000).toISOString(), error: null, projects: 4 }, todoist: null } }), async (p) => {
-  await tab(p, "Import Data");
+await shot("full-transfer-syncing", FULL, full({ settings: DARK, mirror: { things: { since: "2026-10-20T10:00:00Z", last: new Date(Date.now() - 120_000).toISOString(), error: null, projects: 4, two_way: false, can_two_way: false }, todoist: null } }), async (p) => {
+  await openApp(p, "Things 3");
   await p.locator(".tr-sync").waitFor();
   const text = await p.locator(".tr-sync").textContent();
   if (!text.includes("Syncing with Things") || !text.includes("2 min ago")) throw new Error(`sync card wrong: ${text}`);
   if (await p.getByRole("button", { name: "Find my Things library" }).count()) throw new Error("the import flow should hide while syncing");
 });
 await shot("full-transfer-sync-start", FULL, full({ settings: DARK }), async (p) => {
-  await tab(p, "Import Data");
+  await openApp(p, "Things 3");
   await p.getByRole("button", { name: "Find my Things library" }).click();
   await p.getByRole("switch", { name: /Keep in sync/ }).waitFor();
   await p.getByRole("button", { name: /^Import \d/ }).click();
   await p.locator(".tr-done", { hasText: "flow in on their own" }).waitFor({ timeout: 5000 });
 });
 await shot("panel-transfer-done", PANEL, scenario(), async (p) => {
-  await tab(p, "Data transfer");
+  await openApp(p, "Things 3");
   await p.getByRole("button", { name: "Find my Things library" }).click();
   await p.getByRole("button", { name: /^Import \d/ }).click();
   await p.locator(".tr-done").waitFor();
   if (!(await p.locator(".tr-done").textContent()).includes("543 tasks imported")) throw new Error("done message missing");
+});
+// v0.4.74: Todoist and Things live in Connectors; Todoist syncs both ways unless set to one-way.
+const TODOIST_LINK = { since: "2026-10-20T10:00:00Z", last: new Date(Date.now() - 60_000).toISOString(), error: null, projects: 3, two_way: true, can_two_way: true };
+await shot("full-connectors-apps", FULL, full({ settings: DARK, mirror: { things: null, todoist: TODOIST_LINK } }), async (p) => {
+  await tab(p, "Connectors");
+  const names = await p.locator(".connector-text h3").allTextContents();
+  if (names.join("|") !== "Todoist|Things 3|Apple Calendar|Apple Reminders") throw new Error(`cards: ${names.join(", ")}`);
+  if (!(await p.locator(".connector", { hasText: "Todoist" }).first().textContent()).includes("in sync both ways")) throw new Error("Todoist card should say both ways");
+  if (await p.locator(".set-item", { hasText: "Import Data" }).count()) throw new Error("Import Data page should be gone");
+});
+await shot("full-connectors-todoist-two-way", FULL, full({ settings: DARK, mirror: { things: null, todoist: TODOIST_LINK } }), async (p) => {
+  await openApp(p, "Todoist");
+  const sw = p.getByRole("switch", { name: /Two-way sync/ });
+  await sw.waitFor();
+  if (!(await sw.isChecked())) throw new Error("two-way should be on by default");
+  if (!(await p.locator(".tr-sync").textContent()).includes("go to Todoist too")) throw new Error("two-way text missing");
+});
+await shot("full-connectors-todoist-one-way", FULL, full({ settings: DARK, mirror: { things: null, todoist: TODOIST_LINK } }), async (p) => {
+  await openApp(p, "Todoist");
+  await p.getByRole("switch", { name: /Two-way sync/ }).click();
+  await p.waitForTimeout(250);
+  if (await p.getByRole("switch", { name: /Two-way sync/ }).isChecked()) throw new Error("one-way didn't take");
+  if (!(await p.locator(".tr-sync").textContent()).includes("Your edits here stay in TodoCity")) throw new Error("one-way text missing");
+  if (!(await p.locator(".connector", { hasText: "Todoist" }).first().textContent()).includes("coming in as they change")) throw new Error("card should say one-way");
+});
+await shot("full-connectors-todoist-howto", FULL, full({ settings: DARK }), async (p) => {
+  await openApp(p, "Todoist");
+  if (await p.locator(".tr-steps").count()) throw new Error("steps should be behind the (i)");
+  await p.getByRole("button", { name: "How to move in" }).hover();
+  await p.locator(".info-pop.rich .tr-steps").waitFor();
+});
+await shot("full-connectors-things-map", FULL, full({ settings: DARK }), async (p) => {
+  await openApp(p, "Things 3");
+  await p.getByRole("button", { name: "What goes where" }).hover();
+  await p.locator(".info-pop.rich .tr-map-table").waitFor();
+  if (await p.getByRole("switch", { name: /Two-way sync/ }).count()) throw new Error("Things has no two-way switch yet");
+});
+await shot("panel-connectors-todoist-done", PANEL, scenario(), async (p) => {
+  await openApp(p, "Todoist");
+  await p.getByLabel("Todoist API token").fill("good-token");
+  await p.locator(".tr-token").getByRole("button", { name: "Connect", exact: true }).click();
+  await p.locator(".tr-preview").waitFor();
+  if (!(await p.locator(".tr-options").textContent()).includes("Changes go both ways")) throw new Error("keep-in-sync should say both ways");
+  await p.getByRole("button", { name: /^Import \d/ }).click();
+  await p.locator(".tr-done", { hasText: "in sync both ways" }).waitFor({ timeout: 5000 });
 });
 await shot("full-compact-blue", FULL, full({ settings: { ...DARK, look: { week_start: "mon", clock: "24", start_list: "last", details: false, accent: "blue", city_sky: "auto", city_motion: true, compact: true } } }), async (p) => {
   if (!(await p.locator(".app-full.compact").count())) throw new Error("compact rows didn't apply");

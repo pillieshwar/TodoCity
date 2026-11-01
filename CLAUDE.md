@@ -6,7 +6,7 @@ TodoCity is a private, Mac-first to-do app. Select or copy text in any app, pres
 
 | Path | What |
 |---|---|
-| `crates/todocity-core/src/` | Pure Rust core with unit tests: `store.rs` (SQLite schema, migrations, tasks, repeats), `sync/` (Mac-to-Mac sync), `mirror.rs` (Things/Todoist keep-in-sync), `things.rs`, `todoist.rs`, `reminders_sync.rs`, `llm.rs`/`prompt.rs`/`extraction.rs` (model calls) |
+| `crates/todocity-core/src/` | Pure Rust core with unit tests: `store.rs` (SQLite schema, migrations, tasks, repeats), `sync/` (Mac-to-Mac sync), `mirror.rs` (Things/Todoist keep-in-sync: bringing changes in), `mirror_out.rs` (two-way: sending changes back), `things.rs`, `todoist.rs`, `todoist_push.rs` (Todoist writes), `reminders_sync.rs`, `llm.rs`/`prompt.rs`/`extraction.rs` (model calls) |
 | `src-tauri/src/` | Tauri shell: commands in `lib.rs`, `capture/`, `engine.rs` (bundled llama-server), `sync.rs`, `mirror.rs`, `reminders/`, `calendar.rs`, `agents/` (MCP), `watch.rs`, `settings.rs` |
 | `src/` | React UI: `App.tsx`, `components/`, `lib/` (`api.ts` = every Tauri invoke, `types.ts`, `dates.ts`/`schedule.ts` = date parsing), `popover/` (menu bar), `quick/` (Quick Add) |
 | `src/whats-new.json` | Release notes, newest first. Shown in the app and copied into GitHub release notes |
@@ -52,7 +52,7 @@ Docs-only changes (like this file) don't need a version bump or a release.
   - Real errors on genuine failures are fine if they're specific and say how to fix the problem.
 - **Privacy claims must stay true.** TodoCity is private by default: nothing leaves the Mac unless the user turns it on. A feature that would break a claim ("agents can never read your tasks", "no analytics") must update that claim in the same release, in the app, `README.md` and the website.
 - **The data folder is** `~/Library/Application Support/TodoCity/` (since 0.4.61). `data_folder::settle` moves the old `app.pluck.desktop` folder there once at launch and leaves a link at the old name. **Never change the bundle identifier** `app.pluck.desktop`: macOS permissions, Keychain items and login items are tied to it.
-- **Synced tasks stay editable.** Things/Todoist keep-in-sync is one-way into TodoCity, but synced tasks are never read-only.
+- **Synced tasks stay editable.** Keep-in-sync is two-way by default (Todoist now; Things and a TODO.md bridge next): changes here go back to the other app. People can switch a connector to one-way in its card, and synced tasks are never read-only either way.
 - **Sync must never lose or resurrect tasks.** For any change touching `sync/`, `mirror.rs`, `reminders_sync.rs` or how tasks are deleted or repeated, think through two Macs, offline edits, and deletes on both sides, and add tests (`sync/engine.rs` has a `send(a, b)` helper).
 - **No real personal data** in code, tests, fixtures, screenshots or docs. Use made-up names (Sam, Maya, Priya, Dana).
 - **Accepted security advisories** go in both `osv-scanner.toml` and `deny.toml`, each with a reason and a date to look again.
@@ -65,10 +65,15 @@ Docs-only changes (like this file) don't need a version bump or a release.
   - A delete is the field `deleted = true`.
   - Changes coming from another Mac are written straight to the tables, skipping app logic, so repeats don't spawn twice.
   - "Keep on this Mac only" projects never leave the Mac.
-- **Mirror (Things/Todoist keep-in-sync):**
-  - Three-way merge against `imports.base`; the source wins only for fields it changed.
-  - A task deleted in TodoCity never comes back.
-  - A safety brake stops mass removals.
+- **Mirror (Things/Todoist keep-in-sync), shared by every connector:**
+  - Each pass pulls first (`Store::mirror`), then, when two-way, plans what to send (`Store::mirror_outbox` → `Op`s), the connector carries them out, and `Store::mirror_sent` records each result. Planning is pure; a failed send is planned again next pass.
+  - Three-way merge against `imports.base`: the pull applies fields the other app changed and moves the base; whatever still differs from the base was changed here and goes out. When both changed a field, the other app wins.
+  - A task deleted in TodoCity never comes back (its `imports` row stays with no task). Deletes go out too; a safety brake holds back mass removals in both directions (more than 20 that are also more than half the linked tasks).
+  - New open tasks in a synced project go out with a `todocity://task/<uid>` line in their notes; the pull strips that line and links a task carrying it (or an unlinked one with the same title and day) instead of adding it twice.
+  - Two Macs: changes from another Mac that can't safely happen twice (adding a task, finishing a repeat) wait 10 minutes (`WAIT_FOR_OTHER_MAC_MS`, read from the sync shadow's HLC) so the Mac that made them goes first. A repeat finished here closes it there and moves the link to the next occurrence (by `next_id`, or the series uid on other Macs); when the other app shows the next date first, the pull moves the link instead.
+  - Moving a linked task into an unsynced project stops syncing it (the other app keeps its copy). "Keep on this Mac only" projects send nothing. Turning two-way on lets go of tasks deleted here while it was one-way (`mirror_start_two_way`).
+  - Free: one connected app at a time, Pro: several, once Pro exists. Not enforced yet.
+  - Things and Todoist live in Settings → Connectors (`ConnectorsTab.tsx`, `MoveIn.tsx`); how to move in and what goes where sit behind (i)s.
 - **Repeats:** completing a repeating task calls `spawn_next`, which creates the next occurrence as a new task. `next_id` is local only. Rules are `todocity_core::recurrence::Repeat` (mirrored in `src/lib/repeat.ts`): the six presets keep their names (`weekly`), custom ones are `rrule:FREQ=…;INTERVAL=…;BYDAY=…;BYMONTHDAY=…;FROM=DONE;UNTIL=…;COUNT=…`. A deadline or UNTIL ends the series; COUNT counts down on each next one and on skip.
 - **Task editing autosaves:** 500 ms after typing stops, and on blur or close.
 - **AI agents (MCP):** add-only by default (`add_task` → review inbox, same reply every time). With **Full access** (`agents_full_access`, off by default) the `--mcp` helper lists every tool in `todocity_core::agent_tools` and forwards calls to the app as `ToolCall` lines on `agents.sock`; the app checks the setting on every call. New agent tools go in `agent_tools.rs` with tests there.

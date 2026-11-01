@@ -234,11 +234,12 @@ export const api = {
   /** Bring in what the last Todoist preview read (backs up first). */
   todoistImport: (options: ThingsOptions, keepInSync = false, token: string | null = null) =>
     invoke<ImportReport>("todoist_import", { options, keepInSync, token: keepInSync ? token : null }),
-  // Keeping in sync with Things 3 or Todoist (one way: changes flow in).
+  // Keeping in sync with Things 3 or Todoist (Todoist both ways unless set to one-way).
   mirrorStatus: () => invoke<MirrorStatus>("mirror_status"),
   mirrorSyncNow: (source: MirrorSource) => invoke<unknown>("mirror_sync_now", { source }),
   /** Stop syncing with an app; its tasks stay (and the Todoist token is deleted). */
   mirrorStop: (source: MirrorSource) => invoke<void>("mirror_stop", { source }),
+  mirrorSetTwoWay: (source: MirrorSource, on: boolean) => invoke<void>("mirror_set_two_way", { source, on }),
   /** Stop syncing one project; it becomes an ordinary project. */
   mirrorStopProject: (name: string) => invoke<boolean>("mirror_stop_project", { name }),
   // Sync between your Macs.

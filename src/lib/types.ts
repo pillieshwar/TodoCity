@@ -558,6 +558,10 @@ export interface MirrorLink {
   last: string | null;
   error: string | null;
   projects: number;
+  /** Changes made here go back to the app too. */
+  two_way: boolean;
+  /** The app can take changes back (Todoist; Things in a coming update). */
+  can_two_way: boolean;
 }
 
 export interface MirrorStatus {

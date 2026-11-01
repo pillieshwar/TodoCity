@@ -15,6 +15,7 @@
 
 use serde::Serialize;
 use tauri::AppHandle;
+use todocity_core::meeting_move::Movable;
 
 use crate::reminders::Access;
 
@@ -42,6 +43,8 @@ pub struct EventInfo {
     pub all_day: bool,
     pub calendar: String,
     pub color: Option<String>,
+    /// Whether it can be moved from TodoCity (`meeting_move::movable`).
+    pub movable: Movable,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -107,6 +110,28 @@ pub fn events(from: &str, to: &str, hidden: &[String]) -> Result<Vec<EventInfo>,
     }
 }
 
+/// Move one meeting (the occurrence starting at `at`) to `start`..`end`, all
+/// local `YYYY-MM-DDTHH:MM[:SS]`. `everyone` is the OK to move a meeting with
+/// guests. Returns the event as it is now.
+pub fn move_event(
+    id: &str,
+    at: &str,
+    start: &str,
+    end: &str,
+    everyone: bool,
+) -> Result<EventInfo, String> {
+    use todocity_core::meeting_move::{check_times, parse_local};
+    let (at, start, end) = (parse_local(at)?, parse_local(start)?, parse_local(end)?);
+    check_times(start, end)?;
+    #[cfg(target_os = "macos")]
+    return macos::move_event(id.to_string(), at, start, end, everyone);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (id, at, everyone);
+        Err("Calendar is only available on macOS.".into())
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod macos {
     #![allow(unused_unsafe)]
@@ -118,17 +143,18 @@ mod macos {
     use std::time::Duration;
 
     use block2::RcBlock;
-    use chrono::{Local, NaiveDate, TimeZone};
+    use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone};
     use objc2::rc::Retained;
     use objc2::runtime::{AnyObject, Bool, NSObjectProtocol, ProtocolObject};
     use objc2::sel;
     use objc2_app_kit::NSColorSpace;
     use objc2_event_kit::{
-        EKAuthorizationStatus, EKCalendar, EKEntityType, EKEventStore,
-        EKEventStoreChangedNotification,
+        EKAuthorizationStatus, EKCalendar, EKEntityType, EKEvent, EKEventStore,
+        EKEventStoreChangedNotification, EKSpan,
     };
     use objc2_foundation::{NSArray, NSDate, NSError, NSNotification, NSNotificationCenter};
     use tauri::{AppHandle, Emitter};
+    use todocity_core::meeting_move::{allowed, movable, EventFacts};
 
     use super::{key, Access, CalendarInfo, EventInfo};
 
@@ -144,6 +170,15 @@ mod macos {
             to: NaiveDate,
             hidden: Vec<String>,
             reply: Sender<Vec<EventInfo>>,
+        },
+        /// Move one occurrence of a meeting.
+        Move {
+            id: String,
+            at: NaiveDateTime,
+            start: NaiveDateTime,
+            end: NaiveDateTime,
+            everyone: bool,
+            reply: Sender<Result<EventInfo, String>>,
         },
         /// Access was just granted or changed: start over with a new store.
         Reset,
@@ -176,6 +211,16 @@ mod macos {
                             reply,
                         } => {
                             let _ = reply.send(worker.events(from, to, &hidden));
+                        }
+                        Request::Move {
+                            id,
+                            at,
+                            start,
+                            end,
+                            everyone,
+                            reply,
+                        } => {
+                            let _ = reply.send(worker.move_event(&id, at, start, end, everyone));
                         }
                         Request::Reset => worker.close(),
                     }
@@ -217,6 +262,26 @@ mod macos {
         })?;
         rx.recv_timeout(WAIT)
             .map_err(|_| "Calendar took too long to answer.".into())
+    }
+
+    pub fn move_event(
+        id: String,
+        at: NaiveDateTime,
+        start: NaiveDateTime,
+        end: NaiveDateTime,
+        everyone: bool,
+    ) -> Result<EventInfo, String> {
+        let (tx, rx) = mpsc::channel();
+        send(Request::Move {
+            id,
+            at,
+            start,
+            end,
+            everyone,
+            reply: tx,
+        })?;
+        rx.recv_timeout(WAIT)
+            .map_err(|_| "Calendar took too long to answer.".to_string())?
     }
 
     struct Store {
@@ -303,32 +368,106 @@ mod macos {
                 );
                 store.eventsMatchingPredicate(&predicate)
             };
-            let mut out: Vec<EventInfo> = found
-                .to_vec()
-                .iter()
-                .map(|e| unsafe {
-                    let cal = e.calendar();
-                    EventInfo {
-                        id: e
-                            .eventIdentifier()
-                            .map(|s| s.to_string())
-                            .unwrap_or_default(),
-                        title: e.title().to_string(),
-                        start: local(e.startDate().timeIntervalSince1970()),
-                        end: local(e.endDate().timeIntervalSince1970()),
-                        all_day: e.isAllDay(),
-                        calendar: cal
-                            .as_ref()
-                            .map(|c| c.title().to_string())
-                            .unwrap_or_default(),
-                        color: cal.as_ref().and_then(|c| hex(c)),
-                    }
-                })
-                .collect();
+            let mut out: Vec<EventInfo> = found.to_vec().iter().map(|e| event_info(e)).collect();
             out.sort_by(|a, b| b.all_day.cmp(&a.all_day).then(a.start.cmp(&b.start)));
             out.dedup_by(|a, b| a.id == b.id && a.start == b.start);
             out
         }
+    }
+
+    impl Worker {
+        /// The occurrence of `id` that starts at `at` (to the minute), moved
+        /// to `start`..`end` and saved for this occurrence only.
+        fn move_event(
+            &mut self,
+            id: &str,
+            at: NaiveDateTime,
+            start: NaiveDateTime,
+            end: NaiveDateTime,
+            everyone: bool,
+        ) -> Result<EventInfo, String> {
+            let Some(store) = self.store() else {
+                return Err(
+                    "Allow TodoCity in System Settings → Privacy & Security → Calendars.".into(),
+                );
+            };
+            let from = date(at - chrono::Duration::days(1));
+            let to = date(at + chrono::Duration::days(1));
+            let want = at.format("%Y-%m-%dT%H:%M").to_string();
+            let found = unsafe {
+                let predicate =
+                    store.predicateForEventsWithStartDate_endDate_calendars(&from, &to, None);
+                store.eventsMatchingPredicate(&predicate)
+            };
+            let event = found
+                .to_vec()
+                .into_iter()
+                .find(|e| unsafe {
+                    e.eventIdentifier().is_some_and(|s| s.to_string() == id)
+                        && local(e.startDate().timeIntervalSince1970()).starts_with(&want)
+                })
+                .ok_or(
+                    "This meeting just changed in Calendar. Take another look and move it again.",
+                )?;
+            allowed(movable(facts(&event)), everyone)?;
+            unsafe {
+                event.setStartDate(Some(&date(start)));
+                event.setEndDate(Some(&date(end)));
+                store
+                    .saveEvent_span_commit_error(&event, EKSpan::ThisEvent, true)
+                    .map_err(|e| e.localizedDescription().to_string())?;
+            }
+            Ok(event_info(&event))
+        }
+    }
+
+    /// What `meeting_move::movable` needs to know about an event.
+    fn facts(e: &EKEvent) -> EventFacts {
+        unsafe {
+            let cal = e.calendar();
+            EventFacts {
+                can_edit: cal.as_ref().is_some_and(|c| c.allowsContentModifications()),
+                all_day: e.isAllDay(),
+                has_guests: e.hasAttendees(),
+                i_organize: e.organizer().is_some_and(|o| o.isCurrentUser()),
+                todocity: cal.as_ref().is_some_and(|c| {
+                    c.title()
+                        .to_string()
+                        .starts_with(crate::calsync::TITLE_PREFIX)
+                }),
+            }
+        }
+    }
+
+    fn event_info(e: &EKEvent) -> EventInfo {
+        unsafe {
+            let cal = e.calendar();
+            EventInfo {
+                id: e
+                    .eventIdentifier()
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                title: e.title().to_string(),
+                start: local(e.startDate().timeIntervalSince1970()),
+                end: local(e.endDate().timeIntervalSince1970()),
+                all_day: e.isAllDay(),
+                calendar: cal
+                    .as_ref()
+                    .map(|c| c.title().to_string())
+                    .unwrap_or_default(),
+                color: cal.as_ref().and_then(|c| hex(c)),
+                movable: movable(facts(e)),
+            }
+        }
+    }
+
+    fn date(t: NaiveDateTime) -> Retained<NSDate> {
+        let secs = Local
+            .from_local_datetime(&t)
+            .earliest()
+            .map(|d| d.timestamp())
+            .unwrap_or_default();
+        NSDate::dateWithTimeIntervalSince1970(secs as f64)
     }
 
     /// The calendar database changed (new data synced, a calendar added,

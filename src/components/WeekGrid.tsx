@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { playDone } from "../lib/doneSound";
 import { api, onCalendarChanged } from "../lib/api";
 import { useProjectColors } from "../lib/colors";
@@ -17,6 +17,7 @@ const HOUR_PX = 52;
 /** Any time shows this many a day before "+N more". */
 const ANY_SHOWN = 2;
 import { NewTaskField } from "./DayPlan";
+import { canMove, moved, occurrenceKey, sameTime, stretched } from "../lib/meetingMove";
 
 interface Props {
   tasks: Task[];
@@ -32,6 +33,9 @@ interface Props {
   openId: number | null;
   /** Slide the week by whole days (drag the dates, or swipe sideways). */
   onSlide?: (days: number) => void;
+  /** "Moved Design review to 10:30", with Undo. */
+  onToast?: (text: string, action?: { label: string; run: () => void }) => void;
+  onError?: (text: string) => void;
 }
 
 /** Seven days from `day` on: Upcoming looks ahead from today, not back to the week's start. */
@@ -48,7 +52,7 @@ type AddAt = { iso: string; hour: number | "any"; minute?: number } | null;
  * hour of their time beside calendar events; untimed ones in Any time. Drag
  * a task to another day or hour, click an empty hour to add one there.
  */
-export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd, onOpen, openId, onSlide }: Props) {
+export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd, onOpen, openId, onSlide, onToast, onError }: Props) {
   const colors = useProjectColors();
   const days = sevenDays(day);
   const from = days[0];
@@ -129,11 +133,85 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
     return () => void sub.then((u) => u());
   }, []);
 
+  // Dragging a meeting (to another time or day) or its bottom edge (its length).
+  const [evDrag, setEvDrag] = useState<{ ev: CalendarEvent; mode: "move" | "stretch"; x: number; y: number; colW: number; preview: CalendarEvent } | null>(null);
+  // A meeting with guests waits for "Move for everyone?".
+  const [askMove, setAskMove] = useState<{ from: CalendarEvent; to: CalendarEvent } | null>(null);
+  // The drag as it is now, for the drop (the listeners are set up when it starts).
+  const evDragNow = useRef(evDrag);
+  evDragNow.current = evDrag;
+  const replaceEvent = (from: CalendarEvent, to: CalendarEvent) =>
+    setEvents((es) => es.map((e) => (occurrenceKey(e) === occurrenceKey(from) ? to : e)));
+  const moveLabel = (e: CalendarEvent) =>
+    `${e.start.slice(0, 10) === today ? "" : `${weekdayLong.format(parseISODate(e.start.slice(0, 10)))} `}${timeLabel(e.start.slice(11, 16), locale)}`;
+  /** Save a meeting's new time in Calendar; Undo puts it back. */
+  const saveMove = (from: CalendarEvent, to: CalendarEvent, undoable = true) => {
+    replaceEvent(from, to);
+    void api
+      .calendarMoveEvent({ id: from.id, at: from.start, start: to.start, end: to.end, everyone: from.movable === "everyone" })
+      .then((saved) => {
+        replaceEvent(to, saved);
+        if (undoable)
+          onToast?.(`Moved “${from.title || "Busy"}” to ${moveLabel(saved)}`, { label: "Undo", run: () => saveMove(saved, from, false) });
+      })
+      .catch((err) => {
+        replaceEvent(to, from);
+        onError?.(String(err));
+      });
+  };
+  useEffect(() => {
+    if (!evDrag) return;
+    const moveTo = (e: PointerEvent) => {
+      const mins = ((e.clientY - evDrag.y) / HOUR_PX) * 60;
+      let preview: CalendarEvent;
+      if (evDrag.mode === "stretch") preview = stretched(evDrag.ev, mins);
+      else {
+        // Stays within the week on screen.
+        const at = days.indexOf(evDrag.ev.start.slice(0, 10));
+        const want = Math.round((e.clientX - evDrag.x) / evDrag.colW);
+        preview = moved(evDrag.ev, at < 0 ? 0 : Math.max(-at, Math.min(6 - at, want)), mins);
+      }
+      setEvDrag((d) => (d && !sameTime(d.preview, preview) ? { ...d, preview } : d));
+    };
+    const drop = () => {
+      const d = evDragNow.current ?? evDrag;
+      setEvDrag(null);
+      if (sameTime(d.ev, d.preview)) return;
+      if (d.ev.movable === "everyone") setAskMove({ from: d.ev, to: d.preview });
+      else saveMove(d.ev, d.preview);
+    };
+    const cancel = () => setEvDrag(null);
+    const key = (e: KeyboardEvent) => e.key === "Escape" && cancel();
+    window.addEventListener("pointermove", moveTo);
+    window.addEventListener("pointerup", drop);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("pointermove", moveTo);
+      window.removeEventListener("pointerup", drop);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("keydown", key);
+    };
+    // Re-bound only when a drag starts or ends.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evDrag?.ev, evDrag?.mode]);
+  const startEvDrag = (e: ReactPointerEvent<HTMLElement>, ev: CalendarEvent, mode: "move" | "stretch") => {
+    if (e.button !== 0 || !canMove(ev)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const lane = (e.currentTarget.closest(".wg-lane") as HTMLElement | null) ?? e.currentTarget;
+    setEvDrag({ ev, mode, x: e.clientX, y: e.clientY, colW: lane.getBoundingClientRect().width || 1, preview: ev });
+  };
+  const shownEvents = useMemo(
+    () => (evDrag ? events.map((e) => (occurrenceKey(e) === occurrenceKey(evDrag.ev) ? evDrag.preview : e)) : events),
+    [events, evDrag],
+  );
+
   const cols = useMemo(
-    () => days.map((iso) => ({ iso, plan: planFor(tasks, iso, today), evs: eventsForDay(events, iso) })),
+    () => days.map((iso) => ({ iso, plan: planFor(tasks, iso, today), evs: eventsForDay(shownEvents, iso) })),
     // `days` is derived from `from`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tasks, events, from, today],
+    [tasks, shownEvents, from, today],
   );
   const holidays = useMemo(() => holidaysByDay(events, from, to), [events, from, to]);
   // The whole day, midnight to 11 PM: scrolling never runs out of hours, so
@@ -157,6 +235,7 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
   }, [from]);
 
   const weekday = useMemo(() => new Intl.DateTimeFormat(locale, { weekday: "short" }), [locale]);
+  const weekdayLong = useMemo(() => new Intl.DateTimeFormat(locale, { weekday: "long" }), [locale]);
 
   function complete(t: Task) {
     playDone(t.id);
@@ -286,22 +365,25 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
     );
   };
 
-  /** A calendar event at its real time and length in the hours. */
-  const eventBlock = (e: CalendarEvent, iso: string, top: number, height: number, left: string, width: string) => (
-    <div
-      key={`${e.id}${e.start}`}
-      className={["wg-event", "wg-block", height < 34 ? "tiny" : ""].filter(Boolean).join(" ")}
-      style={{ top, height, left, width, "--ev": e.color ?? "var(--faint)" } as CSSProperties}
-      title={`${e.title || "Busy"} · ${e.start.slice(0, 10) < iso ? "until " : ""}${timeLabel(e.start.slice(11, 16), locale)} – ${timeLabel(e.end.slice(11, 16), locale)} · ${e.calendar}`}
-    >
-      <span className="wg-event-title">{e.title || "Busy"}</span>
-      {height >= 34 && (
-        <span className="wg-event-time">
-          {timeLabel(e.start.slice(11, 16), locale)} – {timeLabel(e.end.slice(11, 16), locale)}
-        </span>
-      )}
-    </div>
-  );
+  /** A calendar event at its real time and length in the hours. Yours (and ones you organize) drag to a new time. */
+  const eventBlock = (e: CalendarEvent, iso: string, top: number, height: number, left: string, width: string) => {
+    const movable = canMove(e);
+    const lifted = !!evDrag && occurrenceKey(evDrag.preview) === occurrenceKey(e);
+    const span = `${e.start.slice(0, 10) < iso ? "until " : ""}${timeLabel(e.start.slice(11, 16), locale)} – ${timeLabel(e.end.slice(11, 16), locale)}`;
+    return (
+      <div
+        key={occurrenceKey(e)}
+        className={["wg-event", "wg-block", height < 34 ? "tiny" : "", movable ? "movable" : "", lifted ? "lifted" : ""].filter(Boolean).join(" ")}
+        style={{ top, height, left, width, "--ev": e.color ?? "var(--faint)" } as CSSProperties}
+        title={`${e.title || "Busy"} · ${span} · ${e.calendar}${movable ? (e.movable === "everyone" ? "\nDrag to move it for everyone" : "\nDrag to move it") : ""}`}
+        onPointerDown={movable ? (ev) => startEvDrag(ev, e, "move") : undefined}
+      >
+        <span className="wg-event-title">{e.title || "Busy"}</span>
+        {(height >= 34 || lifted) && <span className="wg-event-time">{span}</span>}
+        {movable && <span className="wg-resize" aria-hidden onPointerDown={(ev) => startEvDrag(ev, e, "stretch")} />}
+      </div>
+    );
+  };
 
   /** Everything timed on one day, placed: tasks and events side by side where they overlap. */
   const lane = (iso: string, tasksAt: Task[], eventsAt: CalendarEvent[]) => {
@@ -399,7 +481,18 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
 
   const nowHour = now.getHours();
   return (
-    <div className="week-grid" ref={gridRef}>
+    <div className={evDrag ? "week-grid moving-event" : "week-grid"} ref={gridRef}>
+      {askMove && (
+        <MoveForEveryone
+          title={askMove.from.title || "Busy"}
+          when={moveLabel(askMove.to)}
+          onCancel={() => setAskMove(null)}
+          onMove={() => {
+            saveMove(askMove.from, askMove.to);
+            setAskMove(null);
+          }}
+        />
+      )}
       {peek && (
         <div className={peek.below ? "wg-peek" : "wg-peek above"} role="tooltip" style={{ left: peek.x, top: peek.y }}>
           <b>{peek.t.title}</b>
@@ -540,6 +633,33 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
               </div>
             ))}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A meeting with guests: moving it sends them the new time. */
+function MoveForEveryone({ title, when, onCancel, onMove }: { title: string; when: string; onCancel: () => void; onMove: () => void }) {
+  const go = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    go.current?.focus();
+    const key = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onCancel]);
+  return (
+    <div className="who-scrim" onClick={(e) => e.target === e.currentTarget && onCancel()}>
+      <div className="who-dialog move-dialog" role="dialog" aria-modal="true" aria-labelledby="move-dialog-title">
+        <h2 id="move-dialog-title">Move “{title}” for everyone?</h2>
+        <p>It moves to {when}, and Calendar sends your guests the new time.</p>
+        <div className="who-dialog-actions">
+          <button type="button" className="ghost" onClick={onCancel}>
+            Keep the time
+          </button>
+          <button type="button" className="primary" ref={go} onClick={onMove}>
+            Move for everyone
+          </button>
         </div>
       </div>
     </div>

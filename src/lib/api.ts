@@ -120,6 +120,9 @@ export const api = {
   calendarSet: (enabled: boolean, hidden: string[]) => invoke<CalendarStatus>("calendar_set", { enabled, hidden }),
   /** Events for the days `from..=to` (YYYY-MM-DD); empty when Calendar isn't connected. */
   calendarEvents: (from: string, to: string) => invoke<CalendarEvent[]>("calendar_events", { from, to }),
+  /** Move one meeting (the occurrence starting at `at`) in Calendar. */
+  calendarMoveEvent: (m: { id: string; at: string; start: string; end: string; everyone: boolean }) =>
+    invoke<CalendarEvent>("calendar_move_event", m),
   calendarOpenPrivacySettings: () => invoke<void>("calendar_open_privacy_settings"),
   openSource: (id: number) => invoke<void>("open_source", { id }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),

@@ -198,7 +198,7 @@ function CalendarSection({
       <div className="card-stack">
         <Toggle
           label="Show calendar events in TodoCity"
-          hint="Meetings appear next to your tasks in the menu bar. Showing them never changes your calendars."
+          hint="Meetings appear next to your tasks. Drag your own meetings in Calendar to move them; everything else stays as it is in Calendar."
           checked={enabled}
           disabled={busy || blocked}
           onChange={(v) => void (v ? turnOn() : turnOff())}

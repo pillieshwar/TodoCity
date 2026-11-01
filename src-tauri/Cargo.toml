@@ -44,7 +44,7 @@ objc2-foundation = { version = "0.3", features = ["NSArray", "NSData", "NSString
 block2 = "0.6"
 # Slack tokens live in the login Keychain.
 keyring = { version = "3", features = ["apple-native"] }
-objc2-event-kit = { version = "0.3", default-features = false, features = ["std", "block2", "EKCalendar", "EKCalendarItem", "EKEventStore", "EKObject", "EKReminder", "EKSource", "EKTypes", "EKError", "EKEvent", "objc2-app-kit"] }
+objc2-event-kit = { version = "0.3", default-features = false, features = ["std", "block2", "EKCalendar", "EKCalendarItem", "EKEventStore", "EKObject", "EKReminder", "EKSource", "EKTypes", "EKError", "EKEvent", "EKParticipant", "objc2-app-kit"] }
 objc2-app-kit = { version = "0.3", features = ["NSPasteboard", "NSPasteboardItem", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow", "NSPanel", "NSColor", "NSColorSpace", "libc"] }
 objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "bitflags", "block2", "UNNotification", "UNNotificationAction", "UNNotificationCategory", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotificationSettings", "UNNotificationSound", "UNNotificationTrigger", "UNUserNotificationCenter"] }
 

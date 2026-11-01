@@ -1,4 +1,9 @@
 {
+  "0.4.71": [
+    "Move your meetings from TodoCity: drag one to a new time or day in Calendar, or stretch it, and it moves in Apple Calendar too",
+    "Changed your mind? Undo puts it back",
+    "Meetings you organize ask first, since your guests get the new time; invites from other people stay as they are"
+  ],
   "0.4.70": [
     "Repeat has its own button, right after priority",
     "Repeat any way you like: every 3 days, every other Monday and Wednesday, the 2nd Tuesday of the month, the last day of the month",

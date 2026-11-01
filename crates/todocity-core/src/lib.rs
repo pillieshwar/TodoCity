@@ -35,6 +35,7 @@ pub mod download;
 pub mod extraction;
 pub mod llm;
 pub mod local_models;
+pub mod meeting_move;
 pub mod mirror;
 pub mod models;
 pub mod modes;

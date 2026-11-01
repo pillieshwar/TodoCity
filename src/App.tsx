@@ -1975,6 +1975,8 @@ export default function App() {
                     onOpen={(t) => setOpenId(t.id)}
                     openId={openId}
                     onSlide={(n) => setPlanDay((d) => toISODate(addDays(parseISODate(d), n)))}
+                    onToast={(text, action) => show(text, action)}
+                    onError={(e) => setError(e)}
                   />
                 </main>
               ) : (

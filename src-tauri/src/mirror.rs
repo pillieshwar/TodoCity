@@ -1,12 +1,13 @@
-//! Keeping TodoCity in step with Things 3 or Todoist, one way (the rules are
-//! in `todocity_core::mirror`).
+//! Keeping TodoCity in step with Things 3 or Todoist (the rules are in
+//! `todocity_core::mirror` and `todocity_core::mirror_out`).
 //!
 //! * Things 3: its database on this Mac is checked every 15 seconds, and
 //!   read (from a copy, as the import does) only when Things has saved since.
 //! * Todoist: read every 5 minutes over its API, with the person's token
 //!   kept in the macOS Keychain. Disconnecting deletes it.
 //!
-//! Nothing is ever written to either app.
+//! Todoist syncs both ways unless the person picks one-way: after each read,
+//! changes made here go back through its API. Things comes into TodoCity.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -17,6 +18,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use todocity_core::mirror::{PassOptions, PassReport, Source};
+use todocity_core::mirror_out::{OutOptions, Sent};
 use todocity_core::things::{self, Options, Preview};
 use todocity_core::todoist::{self, TodoistError};
 
@@ -30,7 +32,7 @@ const THINGS_EVERY: Duration = Duration::from_secs(15);
 const TODOIST_EVERY: Duration = Duration::from_secs(300);
 
 /// One app being kept in step.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Link {
     /// RFC 3339: when syncing began.
@@ -43,6 +45,31 @@ pub struct Link {
     pub path: Option<String>,
     /// Things: the save that was read last (its modification time).
     pub seen: Option<String>,
+    /// Changes here go back to the app too. On unless the person picks
+    /// one-way (links saved before two-way existed turn it on).
+    #[serde(default = "yes")]
+    pub two_way: bool,
+    /// Two-way has been set up: tasks deleted here while it was one-way
+    /// were let go (they stay in the other app).
+    pub two_way_ready: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for Link {
+    fn default() -> Self {
+        Self {
+            since: String::new(),
+            last: None,
+            error: None,
+            path: None,
+            seen: None,
+            two_way: true,
+            two_way_ready: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -69,6 +96,10 @@ pub struct LinkStatus {
     pub error: Option<String>,
     /// Projects kept in step right now.
     pub projects: usize,
+    /// Changes here go back to the app.
+    pub two_way: bool,
+    /// The app can take changes back (Things: coming soon).
+    pub can_two_way: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -96,6 +127,10 @@ impl Which {
             Self::Things => things::SOURCE,
             Self::Todoist => todoist::SOURCE,
         }
+    }
+    /// Changes here can go back to this app.
+    fn can_two_way(self) -> bool {
+        self == Self::Todoist
     }
 }
 
@@ -229,7 +264,9 @@ async fn pass(app: &AppHandle, which: Which, force: bool) -> CmdResult<Option<Pa
             m.edit(which, |l| {
                 if let Some(l) = l {
                     l.last = Some(now());
-                    l.error = None;
+                    // What needs the person's attention (a held-back
+                    // removal, a change Todoist didn't take), if anything.
+                    l.error = report.errors.first().cloned();
                     if seen.is_some() {
                         l.seen = seen;
                     }
@@ -290,6 +327,7 @@ async fn things_pass(
             &plan.floors,
             &plan.items,
             &since,
+            false,
         )?;
         Ok(Some((report, saved)))
     })
@@ -301,9 +339,9 @@ async fn todoist_pass(
     app: &AppHandle,
     link: &Link,
 ) -> CmdResult<Option<(PassReport, Option<String>)>> {
-    let token = keychain().and_then(|k| k.get_password().ok()).ok_or(
-        "Todoist isn't connected on this Mac any more. Connect it again in Settings → Import Data.",
-    )?;
+    let token = keychain()
+        .and_then(|k| k.get_password().ok())
+        .ok_or("Connect Todoist again in Settings → Connectors to keep it in sync.")?;
     let client = reqwest::Client::builder()
         .user_agent(concat!("TodoCity/", env!("CARGO_PKG_VERSION")))
         .timeout(Duration::from_secs(60))
@@ -325,7 +363,7 @@ async fn todoist_pass(
         .await
         .map_err(|e| match e {
             TodoistError::BadToken => {
-                "Todoist no longer accepts the saved token. Connect it again in Settings → Import Data.".to_string()
+                "Todoist no longer accepts the saved token. Connect it again in Settings → Connectors.".to_string()
             }
             e => e.to_string(),
         })?;
@@ -336,15 +374,85 @@ async fn todoist_pass(
     let today = chrono::Local::now().date_naive();
     let plan = todoist::plan(&lib, &opts, &HashSet::new(), today);
     let state = app.state::<AppState>();
-    let report = apply(
+    let two_way = link.two_way;
+    if two_way && !link.two_way_ready {
+        let store = state.store.lock().map_err(err)?;
+        let let_go = store.mirror_start_two_way(todoist::SOURCE).map_err(err)?;
+        drop(store);
+        if let_go > 0 {
+            log::info!(
+                "two-way sync with Todoist: {let_go} tasks deleted here earlier stay in Todoist"
+            );
+        }
+        app.state::<Mirror>().edit(Which::Todoist, |l| {
+            if let Some(l) = l {
+                l.two_way_ready = true;
+            }
+        });
+    }
+    let mut report = apply(
         &state,
         todoist::SOURCE,
         &plan.preview,
         &plan.floors,
         &plan.items,
         &link.since,
+        two_way,
     )?;
+    if two_way {
+        let sent = send_changes(app, &client, &token, &lib).await?;
+        report.updated += sent.0;
+        report.errors.extend(sent.1);
+    }
     Ok(Some((report, None)))
+}
+
+/// Two-way: send what changed here to Todoist. Returns how many changes
+/// went, and what didn't.
+async fn send_changes(
+    app: &AppHandle,
+    client: &reqwest::Client,
+    token: &str,
+    lib: &todoist::Library,
+) -> CmdResult<(usize, Vec<String>)> {
+    let state = app.state::<AppState>();
+    let device = crate::sync::this_device(app);
+    let local_only = crate::sync::local_only_projects(app);
+    let outbox = {
+        let store = state.store.lock().map_err(err)?;
+        store
+            .mirror_outbox(
+                todoist::SOURCE,
+                &OutOptions {
+                    today: chrono::Local::now().date_naive(),
+                    extras: todocity_core::todoist_push::EXTRAS,
+                    device: device.as_deref(),
+                    now_ms: Utc::now().timestamp_millis(),
+                    local_only: &local_only,
+                },
+            )
+            .map_err(err)?
+    };
+    let mut errors = outbox.errors;
+    if outbox.ops.is_empty() {
+        return Ok((0, errors));
+    }
+    let results =
+        todocity_core::todoist_push::push(client, todoist::API_BASE, token, lib, &outbox.ops).await;
+    let mut done = 0;
+    let store = state.store.lock().map_err(err)?;
+    for (op, sent) in outbox.ops.iter().zip(&results) {
+        if let Sent::Failed(e) = sent {
+            errors.push(format!("{}: {e}", op.title()));
+        } else {
+            done += 1;
+        }
+        store.mirror_sent(todoist::SOURCE, op, sent).map_err(err)?;
+    }
+    if done > 0 {
+        log::info!("sync to Todoist: {done} changes sent");
+    }
+    Ok((done, errors))
 }
 
 fn apply(
@@ -354,6 +462,7 @@ fn apply(
     floors: &[(String, Option<String>)],
     items: &[todocity_core::Imported],
     since: &str,
+    two_way: bool,
 ) -> CmdResult<PassReport> {
     let store = state.store.lock().map_err(err)?;
     store
@@ -372,6 +481,7 @@ fn apply(
             &PassOptions {
                 today: chrono::Local::now().date_naive(),
                 since,
+                two_way,
             },
         )
         .map_err(err)
@@ -439,17 +549,19 @@ pub fn mirror_status(
             .map(|v| v.iter().filter(|p| !p.stopped).count())
             .unwrap_or(0)
     };
-    let status = |l: Option<Link>, source: &str| {
+    let status = |l: Option<Link>, which: Which| {
         l.map(|l| LinkStatus {
             since: l.since,
             last: l.last,
             error: l.error,
-            projects: count(source),
+            projects: count(which.source()),
+            two_way: l.two_way && which.can_two_way(),
+            can_two_way: which.can_two_way(),
         })
     };
     Ok(MirrorStatus {
-        things: status(c.things, things::SOURCE),
-        todoist: status(c.todoist, todoist::SOURCE),
+        things: status(c.things, Which::Things),
+        todoist: status(c.todoist, Which::Todoist),
     })
 }
 
@@ -479,6 +591,29 @@ pub async fn mirror_stop(app: AppHandle, source: String) -> CmdResult<()> {
     }
     let _ = app.emit("mirror-changed", ());
     let _ = app.emit("tasks-changed", ());
+    Ok(())
+}
+
+/// Two-way (changes here go back to the app) or one-way (they stay here).
+#[tauri::command]
+pub async fn mirror_set_two_way(app: AppHandle, source: String, on: bool) -> CmdResult<()> {
+    let which = Which::parse(&source)?;
+    if on && !which.can_two_way() {
+        return Err("Two-way sync with Things comes in a coming update.".into());
+    }
+    let m = app.state::<Mirror>();
+    {
+        let _one = m.busy.lock().await;
+        m.edit(which, |l| {
+            if let Some(l) = l {
+                l.two_way = on;
+                // Turning it on again lets go of what was deleted meanwhile.
+                l.two_way_ready = false;
+            }
+        });
+    }
+    m.poke();
+    let _ = app.emit("mirror-changed", ());
     Ok(())
 }
 

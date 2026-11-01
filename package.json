@@ -2,7 +2,7 @@
   "name": "todocity",
   "private": true,
   "license": "MIT",
-  "version": "0.4.73",
+  "version": "0.4.74",
   "type": "module",
   "description": "Select text anywhere, get a private, dated task. Runs a small model locally.",
   "scripts": {

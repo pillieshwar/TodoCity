@@ -1,5 +1,6 @@
-//! Keeping TodoCity in step with Things 3 or Todoist, one way: what changes
-//! there flows in here, and nothing here is ever written back.
+//! Keeping TodoCity in step with Things 3 or Todoist: the pass that brings
+//! the other app's changes in. With two-way sync on (the default), changes
+//! made here go back out afterwards: see [`crate::mirror_out`].
 //!
 //! Tasks stay editable here. Each one remembers how the other app last had
 //! it (its *base*, kept in `imports.base`). A pass only changes a field here
@@ -14,6 +15,13 @@
 //! * Each of the other app's projects (or areas) maps to one project here,
 //!   by its id, so renaming it here keeps it in step. A stopped project —
 //!   "Stop syncing", or taking it down — is left alone from then on.
+//! * Two-way only: a new task there that is already here (it carries this
+//!   task's `todocity://task/<uid>` link, because another Mac sent it, or a
+//!   synced project here has an open task with the same title and day) is
+//!   linked rather than added twice.
+//! * A repeating task finished here moves on there too; when the other app
+//!   shows the next date, the link follows to the next occurrence here, so
+//!   the finished one stays finished and nothing repeats twice.
 
 use std::collections::{HashMap, HashSet};
 
@@ -85,6 +93,8 @@ pub struct PassOptions<'a> {
     /// RFC 3339; when syncing began. Finished tasks new to TodoCity only
     /// come if they were finished after this.
     pub since: &'a str,
+    /// Changes here go back to the other app too.
+    pub two_way: bool,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
@@ -106,6 +116,48 @@ pub struct MirrorProject {
     pub stopped: bool,
 }
 
+/// The line that links a task in the other app to the same task here.
+pub const LINK_PREFIX: &str = "todocity://task/";
+
+/// The link written into the other app's notes for task `uid`.
+pub fn link_line(uid: &str) -> String {
+    format!("{LINK_PREFIX}{uid}")
+}
+
+/// Take a `todocity://task/<uid>` line out of `notes`; returns the uid.
+pub fn take_link(notes: &mut Option<String>) -> Option<String> {
+    let text = notes.as_deref()?;
+    let mut uid = None;
+    let kept: Vec<&str> = text
+        .lines()
+        .filter(|line| {
+            let l = line.trim();
+            match l.strip_prefix(LINK_PREFIX) {
+                Some(rest) if rest.len() == 32 && rest.bytes().all(|b| b.is_ascii_hexdigit()) => {
+                    uid.get_or_insert_with(|| rest.to_ascii_lowercase());
+                    false
+                }
+                _ => true,
+            }
+        })
+        .collect();
+    uid.as_ref()?;
+    let rest = kept.join("\n").trim().to_string();
+    *notes = (!rest.is_empty()).then_some(rest);
+    uid
+}
+
+/// Titles compared loosely: case and spacing don't matter.
+pub(crate) fn same_title(a: &str, b: &str) -> bool {
+    let norm = |s: &str| {
+        s.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
+    };
+    norm(a) == norm(b)
+}
+
 /// A change to a task here: its id, the patch, and done (with when).
 type Update = (i64, TaskPatch, Option<(bool, Option<String>)>);
 
@@ -115,7 +167,7 @@ const MAX_SAFE_REMOVALS: usize = 20;
 
 /// An open task's day: one that has passed shows up today, as it does in
 /// the other app's Today list.
-fn shown_day(due: &Option<String>, done: bool, today: NaiveDate) -> Option<String> {
+pub(crate) fn shown_day(due: &Option<String>, done: bool, today: NaiveDate) -> Option<String> {
     let d = due.as_deref()?;
     if done {
         return Some(d.to_string());
@@ -236,6 +288,99 @@ impl Store {
         self.conn
             .execute("UPDATE imports SET base = NULL WHERE source = ?1", [source])?;
         Ok(())
+    }
+
+    pub(crate) fn is_done(&self, id: i64) -> Result<bool, StoreError> {
+        Ok(self
+            .conn
+            .query_row("SELECT done FROM tasks WHERE id = ?1", [id], |r| r.get(0))
+            .optional()?
+            .unwrap_or(false))
+    }
+
+    /// The occurrence a finished repeating task made: by `next_id` on the
+    /// Mac that finished it, by its series uid on every other Mac.
+    pub(crate) fn next_occurrence(&self, id: i64) -> Result<Option<i64>, StoreError> {
+        let row: Option<(Option<i64>, Option<String>, Option<String>, Option<String>)> = self
+            .conn
+            .query_row(
+                "SELECT next_id, uid, series_date, due_date FROM tasks WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()?;
+        let Some((next, uid, series, due)) = row else {
+            return Ok(None);
+        };
+        let exists = |n: i64| -> Result<bool, StoreError> {
+            Ok(self
+                .conn
+                .query_row("SELECT 1 FROM tasks WHERE id = ?1", [n], |_| Ok(()))
+                .optional()?
+                .is_some())
+        };
+        if let Some(n) = next {
+            if exists(n)? {
+                return Ok(Some(n));
+            }
+        }
+        let Some(uid) = uid else { return Ok(None) };
+        let day = series
+            .or(due)
+            .and_then(|d| NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok());
+        let next_uid = crate::store::series_uid(&uid, day);
+        Ok(self
+            .conn
+            .query_row("SELECT id FROM tasks WHERE uid = ?1", [next_uid], |r| {
+                r.get(0)
+            })
+            .optional()?)
+    }
+
+    /// A task here that is the same as one new in the other app: the one
+    /// its link line names, or an open, not yet linked task in the same
+    /// project (or the Inbox) with the same title and day. The flag says whether
+    /// it's linked already.
+    fn already_here(
+        &self,
+        marked: Option<&str>,
+        project: &Option<String>,
+        title: &str,
+        day: &Option<String>,
+    ) -> Result<Option<(i64, bool)>, StoreError> {
+        const LINKED: &str = "EXISTS (SELECT 1 FROM imports i WHERE i.task_id = t.id)";
+        if let Some(uid) = marked {
+            let hit: Option<(i64, bool)> = self
+                .conn
+                .query_row(
+                    &format!("SELECT t.id, {LINKED} FROM tasks t WHERE t.uid = ?1"),
+                    [uid],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            if hit.is_some() {
+                return Ok(hit);
+            }
+        }
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT t.id, t.title, t.due_date FROM tasks t
+             WHERE t.done = 0 AND t.project IS ?1 COLLATE NOCASE AND NOT {LINKED}"
+        ))?;
+        let rows = stmt.query_map([project], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+        let title_there = title;
+        for row in rows {
+            let (id, title, due) = row?;
+            if same_title(&title, title_there) && &due == day {
+                return Ok(Some((id, false)));
+            }
+        }
+        Ok(None)
     }
 
     /// One pass: bring the other app's changes in. See the module docs.
@@ -380,6 +525,10 @@ impl Store {
             let Some(project) = local_of(&item.building) else {
                 continue;
             };
+            // The link line is TodoCity's own; it never shows in notes here.
+            let mut owned = item.clone();
+            let marked = take_link(&mut owned.task.notes);
+            let item = &owned;
             let new = Base::of(item);
             match links.get(&item.ext_id) {
                 Some((Some(id), base)) => {
@@ -391,13 +540,26 @@ impl Store {
                         None => set_base(&item.ext_id, Some(*id), &new)?,
                         Some(old) if old == new => {}
                         Some(old) => {
+                            // A repeat finished here and moved on there: the
+                            // link follows to the next occurrence here.
+                            let mut id = *id;
+                            if new.recurrence.is_some()
+                                && !new.done
+                                && !old.done
+                                && new.due_date != old.due_date
+                                && self.is_done(id)?
+                            {
+                                if let Some(next) = self.next_occurrence(id)? {
+                                    id = next;
+                                }
+                            }
                             let patch = patch_for(&old, &new, project, opts.today);
                             let done = (new.done != old.done)
                                 .then(|| (new.done, item.completed_at.clone()));
                             if !is_empty(&patch) || done.is_some() {
-                                updates.push((*id, patch, done));
+                                updates.push((id, patch, done));
                             }
-                            set_base(&item.ext_id, Some(*id), &new)?;
+                            set_base(&item.ext_id, Some(id), &new)?;
                         }
                     }
                 }
@@ -411,6 +573,42 @@ impl Store {
                             .map_or(true, |at| at < opts.since)
                     {
                         continue;
+                    }
+                    // Two-way: the same task may already be here.
+                    if opts.two_way && !item.done {
+                        let day = shown_day(&item.task.due_date, false, opts.today);
+                        match self.already_here(
+                            marked.as_deref(),
+                            &project,
+                            &item.task.title,
+                            &day,
+                        )? {
+                            Some((_, true)) => {
+                                // Its twin there is linked already: keep this
+                                // one out rather than show it twice.
+                                self.conn.execute(
+                                    "INSERT OR IGNORE INTO imports (source, ext_id, task_id, imported_at)
+                                     VALUES (?1, ?2, NULL, ?3)",
+                                    params![source, item.ext_id, chrono::Utc::now().to_rfc3339()],
+                                )?;
+                                continue;
+                            }
+                            Some((id, false)) => {
+                                // Linked; where the two differ, the other
+                                // app's version wins, as in a tie.
+                                let here = crate::mirror_out::base_here(
+                                    &self.get(id)?,
+                                    item.building.clone(),
+                                );
+                                let patch = patch_for(&here, &new, project.clone(), opts.today);
+                                if !is_empty(&patch) {
+                                    updates.push((id, patch, None));
+                                }
+                                set_base(&item.ext_id, Some(id), &new)?;
+                                continue;
+                            }
+                            None => {}
+                        }
                     }
                     let mut task = item.task.clone();
                     task.due_date = shown_day(&task.due_date, item.done, opts.today);
@@ -571,6 +769,7 @@ mod tests {
                     &PassOptions {
                         today: day(10),
                         since: "2026-11-01T00:00:00Z",
+                        two_way: false,
                     },
                 )
                 .unwrap()

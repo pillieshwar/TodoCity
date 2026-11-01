@@ -92,6 +92,17 @@ pub fn local_only_projects(app: &AppHandle) -> std::collections::HashSet<String>
         .unwrap_or_default()
 }
 
+/// This Mac's id in Mac-to-Mac sync, when sync is on.
+pub fn this_device(app: &AppHandle) -> Option<String> {
+    app.try_state::<SyncService>().and_then(|s| {
+        s.cfg
+            .lock()
+            .ok()
+            .filter(|c| c.on && !c.device.is_empty())
+            .map(|c| c.device.clone())
+    })
+}
+
 impl SyncService {
     pub fn new(data_dir: &std::path::Path) -> Self {
         let path = data_dir.join("sync.json");

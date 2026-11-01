@@ -1,7 +1,10 @@
-import { useId, useRef, useState, type CSSProperties } from "react";
+import { useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
-/** A small (i): hover, focus or click to read more. Keeps settings pages short. */
-export function InfoTip({ text, label = "More info" }: { text: string; label?: string }) {
+/**
+ * A small (i): hover, focus or click to read more. Keeps settings pages
+ * short. `text` can be a few lines of rich content (a list, a small table).
+ */
+export function InfoTip({ text, label = "More info", wide = false }: { text: ReactNode; label?: string; wide?: boolean }) {
   const [open, setOpenRaw] = useState(false);
   const [at, setAt] = useState<CSSProperties>({});
   const btn = useRef<HTMLButtonElement>(null);
@@ -12,7 +15,7 @@ export function InfoTip({ text, label = "More info" }: { text: string; label?: s
       const next = typeof v === "function" ? v(o) : v;
       const r = btn.current?.getBoundingClientRect();
       if (next && r) {
-        const width = Math.min(300, window.innerWidth - 24);
+        const width = Math.min(wide ? 380 : 300, window.innerWidth - 24);
         const left = Math.max(12, Math.min(r.left - 10, window.innerWidth - width - 12));
         setAt({ top: r.bottom + 6, left, maxWidth: width });
       }
@@ -43,11 +46,16 @@ export function InfoTip({ text, label = "More info" }: { text: string; label?: s
           <path d="M8 7.2v4M8 4.9v.1" strokeLinecap="round" />
         </svg>
       </button>
-      {open && (
-        <span role="tooltip" id={id} className="info-pop" style={at}>
-          {text}
-        </span>
-      )}
+      {open &&
+        (typeof text === "string" ? (
+          <span role="tooltip" id={id} className="info-pop" style={at}>
+            {text}
+          </span>
+        ) : (
+          <div role="tooltip" id={id} className="info-pop rich" style={at}>
+            {text}
+          </div>
+        ))}
     </span>
   );
 }

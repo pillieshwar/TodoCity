@@ -6,7 +6,6 @@ import { ConnectorsTab } from "./ConnectorsTab";
 import { AgentsPage } from "./AgentsSection";
 import { WatchSection } from "./WatchSection";
 import { safeLocale } from "../lib/locale";
-import { DataTransferTab } from "./DataTransferTab";
 import { AppearancePage, CapturePage, CityPage, DataSection, GeneralPage, HelpPage, NotificationsPage } from "./GeneralSettings";
 import { ModelsTab } from "./ModelsTab";
 import { ModesSection } from "./ModesSettings";
@@ -26,7 +25,6 @@ export type SettingsPage =
   | "agents"
   | "watch"
   | "model"
-  | "movein"
   | "backups"
   | "help";
 
@@ -65,14 +63,13 @@ export const PAGE_GROUPS: { label: string; pages: PageInfo[] }[] = [
   {
     label: "Connections",
     pages: [
-      { id: "connectors", label: "Calendar & Reminders", icon: "plug" },
+      { id: "connectors", label: "Connectors", icon: "plug" },
       { id: "sync", label: "Your other Macs", icon: "macs" },
     ],
   },
   {
     label: "Data",
     pages: [
-      { id: "movein", label: "Import Data", icon: "import" },
       { id: "backups", label: "Backups & export", icon: "backup" },
       { id: "help", label: "Help", icon: "help" },
     ],
@@ -84,7 +81,7 @@ export const pageLabel = (p: SettingsPage) => ALL.find((x) => x.id === p)?.label
 
 /** Older names for places in Settings (from the menu bar, the tour…). */
 export function pageFromTab(t: string): SettingsPage | null {
-  const old: Record<string, SettingsPage> = { settings: "general", models: "model", transfer: "movein", preferences: "general", harness: "agents" };
+  const old: Record<string, SettingsPage> = { settings: "general", models: "model", transfer: "connectors", movein: "connectors", preferences: "general", harness: "agents" };
   if (old[t]) return old[t];
   return ALL.some((p) => p.id === t) ? (t as SettingsPage) : null;
 }
@@ -190,11 +187,10 @@ export function SettingsContent({
       {page === "modes" && <ModesSection {...props} />}
       {page === "city" && <CityPage {...props} />}
       {page === "sync" && <SyncPage />}
-      {page === "connectors" && <ConnectorsTab />}
+      {page === "connectors" && <ConnectorsTab onDone={onDone} />}
       {page === "agents" && <AgentsPage />}
       {page === "watch" && <WatchSection locale={safeLocale()} onAgents={() => onPage?.("agents")} onModels={() => onPage?.("model")} />}
       {page === "model" && <ModelsTab onChanged={onModelChanged} />}
-      {page === "movein" && <DataTransferTab onFinished={onDone} />}
       {page === "backups" && <DataSection onError={onError} />}
       {page === "help" && <HelpPage onTour={onTour} onKeys={onKeys} />}
     </div>

@@ -184,6 +184,8 @@ The sidebar's switch at the top picks a **mode**. In **Work**, Today, Calendar, 
 
 - **Your other Macs** keeps the same tasks on your work and personal Macs — end-to-end encrypted, no iCloud or account needed. See [Sync between your Macs](#sync-between-your-macs).
 - **Apple Calendar** shows your meetings beside your tasks (includes Google, Outlook and iCloud calendars added to the Mac), and can **put your tasks in Calendar**: tasks with a day and time become events, both ways. They get calendars of their own, never your default one: one per project, grouped like "TodoCity · Work · Launch" and "TodoCity · Personal · Home", so you tick exactly what to see. New projects get a calendar by themselves. Move or stretch an event and the task follows; delete it and the task goes too.
+- **Todoist** syncs both ways: edit a task in either app and the change shows up in the other, new tasks in a synced project go across, and deleting goes both ways too. Prefer one-way? Switch it in its card. See [Moving from Todoist](#moving-from-todoist).
+- **Things 3** comes in and keeps flowing in. See [Moving from Things 3](#moving-from-things-3).
 - **Apple Reminders** syncs both ways — off by default.
 - **AI agents** — connect Claude Code, Codex, Antigravity CLI, Gemini CLI, Cursor, Claude Desktop, VS Code, Windsurf or LM Studio in one click in **Settings → Agents**. They can *add* tasks ("add a TodoCity task to send the deck Friday 3pm"), and you approve each one. Turn on **Full access** and they can run your list for you: read, add, change, schedule (to the minute, with lengths), complete and delete tasks, sub-tasks, reminders, projects and sections, through 30 MCP tools, plus ready-made requests (Plan my day, Weekly review, Tidy my Inbox) that show up as slash commands. Everything an agent adds or changes is marked in your lists — pick **Changed by agents** in the **View** button to see it all — and one click undoes it.
 - **Agents inside TodoCity** — open the agent panel (the terminal button at the top right of the full window) to run Claude Code, Codex, Antigravity CLI, Gemini CLI or Cursor Agent, or a plain terminal, right beside your list; each one starts with TodoCity's MCP server already connected. **Send to agent** (the agent button on a task's line, or its ⋯ menu) starts an agent on that task in the folder you pick; the task shows how it's going (working, needs you, ready to review), what the agent reports back and any links, and you mark it done after you review. **With agents** in the sidebar lists every task you've handed off, and **What it did** shows the agent's terminal text, kept on your Mac.
@@ -210,12 +212,12 @@ The sidebar's switch at the top picks a **mode**. In **Work**, Today, Calendar, 
 
 ## Moving from Things 3
 
-Settings → **Import Data** brings your whole Things 3 library into TodoCity. It all happens on your Mac: TodoCity reads a copy of Things' database, and Things itself isn't changed, so you can keep using it while you try TodoCity.
+**Settings → Connectors → Things 3** brings your whole Things 3 library into TodoCity. It all happens on your Mac: TodoCity reads a copy of Things' database, and Things itself isn't changed, so you can keep using it while you try TodoCity.
 
 1. **Open Things 3 on this Mac** and let it finish syncing. If you only use Things on iPhone or iPad, install Things 3 for Mac and sign in to Things Cloud first.
-2. In TodoCity, open **Settings → Import Data** and click **Find my Things library**. If macOS asks whether TodoCity may access data from other apps, click **Allow**.
+2. In TodoCity, open **Settings → Connectors → Things 3** and click **Find my Things library**. If macOS asks whether TodoCity may access data from other apps, click **Allow**.
 3. **Check the preview.** Untick any project you'd rather leave behind, and choose whether to bring the Logbook and cancelled to-dos.
-4. **Keep in sync** (optional). Leave it on and new to-dos and changes in Things keep flowing into TodoCity on their own. Your edits in TodoCity stay, and nothing is sent back to Things. **Stop syncing** any time, for one project (its ⋯ menu) or all of Things (Settings → Import Data).
+4. **Keep in sync** (optional). Leave it on and new to-dos and changes in Things keep flowing into TodoCity on their own. Your edits in TodoCity stay in TodoCity. **Stop syncing** any time, for one project (its ⋯ menu) or all of Things (its card in Settings → Connectors).
 5. **Click Import.** TodoCity backs itself up first (Settings → Backups & export → "before import"), so you can undo it.
 
 Running it again later only brings to-dos that are new since last time, even if you've deleted some here.
@@ -239,12 +241,12 @@ Trashed to-dos stay behind. **Can't find your library?** Click **Choose the data
 
 ## Moving from Todoist
 
-Settings → **Import Data** → **Todoist** brings your Todoist into TodoCity. Todoist isn't changed, so you can keep using it while you try TodoCity.
+**Settings → Connectors → Todoist** brings your Todoist into TodoCity and keeps the two in sync, both ways, so you can keep using Todoist on your phone or with your team.
 
 1. In Todoist (web or app), open **Settings → Integrations → Developer** and click **Copy API token**.
 2. In TodoCity, paste it and click **Connect**. TodoCity reads your projects, sections, tasks, sub-tasks, labels, comments and completed tasks straight from Todoist's servers to your Mac. Big accounts take a minute while completed tasks come in, year by year.
 3. **Check the preview.** Untick any project you'd rather leave behind, and choose whether to bring completed tasks.
-4. **Keep in sync** (optional). Leave it on and Todoist changes keep flowing in every few minutes. The token is then kept in your Keychain; with sync off, it's used once and forgotten. Your edits in TodoCity stay, and nothing is sent back to Todoist.
+4. **Keep in sync** (optional). Leave it on and TodoCity and Todoist stay in step every few minutes, both ways: change a task in either app, add one to a synced project, finish or delete it, and the other app follows. When the same thing changes in both, Todoist's change is kept. The token is then kept in your Keychain; with sync off, it's used once and forgotten. **Two-way sync** can be switched to one-way in Todoist's card; then Todoist's changes come in and yours stay here. **Stop syncing** any time, for one project (its ⋯ menu) or all of Todoist (its card).
 5. **Click Import.** TodoCity backs itself up first (Settings → Backups & export → "before import"). Running it again later only brings tasks that are new since last time.
 
 **No token?** Export each project with **⋯ → Export as CSV** in Todoist (or, on Pro, download a backup from Settings → Backups and unzip it), then choose **No token? Use CSV files instead** and pick all the .csv files. CSV exports carry your open tasks; connect with a token to bring completed ones too.
@@ -262,6 +264,8 @@ Settings → **Import Data** → **Todoist** brings your Todoist into TodoCity. 
 | Date and time, deadline | Day and time, deadline |
 | Recurring date | The same repeat when it's daily, weekdays, weekly, every 2 weeks, monthly or yearly; other patterns come once, with a note |
 | Completed tasks | Done tasks: lit windows in your city |
+
+With two-way sync, title, notes, day and time, repeat, deadline, priority, project and section, done and deleted go back to Todoist. Sub-tasks, Someday and This Evening are kept as they are in Todoist.
 
 ## Sync between your Macs
 
@@ -339,6 +343,7 @@ gh attestation verify ~/Downloads/TodoCity-macOS.dmg --repo pillieshwar/TodoCity
 - **Agents** (**Settings → Agents**). Connected agents like Claude Code, Codex and Cursor add tasks for your review, or, with **Full access**, read and change them. They talk to TodoCity over a local connection; what an agent reads, it sends to its AI service. Starting an agent from the agent panel connects it with the access you've chosen, and a task you send to an agent goes to it and on to its AI service.
 - **Watch** (**Settings → Watch**). Reads the text of the window in front (never password managers, Keychain, System Settings or terminals, and never what you type) and keeps none of it. New lines that look like to-dos go to the reader you pick: an agent you've connected, which sends them to its AI service, or the open model on your Mac.
 - **Sync between your Macs** is end-to-end encrypted. Changes pass through a relay as sealed boxes it can't open; the key exists only on your Macs, in the Keychain. The relay keeps no logs, deletes each box once every Mac has it (30 days at most), and has no accounts. See [Sync between your Macs](#sync-between-your-macs).
+- **Todoist** (**Settings → Connectors**). With keep-in-sync on, TodoCity reads your Todoist with your token and, with two-way sync, sends changes to synced tasks back to Todoist's servers. New tasks in your TodoCity Inbox, in projects that don't sync with Todoist and in "Keep on this Mac only" projects stay on your Mac.
 - **Apple Reminders and Calendar** sync through iCloud if you pick an iCloud list or account. Pick "On My Mac" to keep them local. "Keep on this Mac only" projects never go to Calendar.
 - **Model downloads** you start come from Hugging Face and are checked against their SHA-256. **Update checks** go to GitHub (turn them off in **Settings → General**).
 

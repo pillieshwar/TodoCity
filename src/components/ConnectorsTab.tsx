@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { api, onCalendarChanged, onRemindersChanged } from "../lib/api";
+import { api, onCalendarChanged, onMirrorChanged, onRemindersChanged } from "../lib/api";
 import { Toggle } from "./GeneralSettings";
 import { RemindersSection } from "./RemindersSection";
 import { CalendarSyncSection } from "./CalendarSyncSection";
-import type { CalendarInfo, CalendarStatus, RemindersStatus } from "../lib/types";
+import { ThingsConnector, ThingsGlyph, TodoistConnector, TodoistGlyph } from "./MoveIn";
+import type { CalendarInfo, CalendarStatus, MirrorStatus, RemindersStatus } from "../lib/types";
 
 /**
- * Calendar & Reminders: Apple's apps on this Mac that TodoCity works with.
- * Each card shows whether it's connected and opens to its settings. (Agents
- * and Watch have their own pages.)
+ * Connectors: the apps TodoCity works with — Todoist and Things 3 (move in,
+ * then stay in sync), Apple Calendar and Apple Reminders. Each card shows
+ * whether it's connected and opens to its settings. (Agents and Watch have
+ * their own pages.)
  */
 /** Open this card the next time the page shows. */
 let openNext: Id | null = null;
@@ -16,7 +18,8 @@ export function openConnectorNext(id: Id) {
   openNext = id;
 }
 
-export function ConnectorsTab() {
+export function ConnectorsTab({ onDone }: { onDone: () => void }) {
+  const [mirror, setMirror] = useState<MirrorStatus | null>(null);
   const [reminders, setReminders] = useState<RemindersStatus | null>(null);
   const [calendar, setCalendar] = useState<CalendarStatus | null>(null);
   const [open, setOpen] = useState<Id | null>(() => {
@@ -28,11 +31,12 @@ export function ConnectorsTab() {
   const refresh = useCallback(() => {
     api.remindersStatus().then(setReminders).catch(() => undefined);
     api.calendarStatus().then(setCalendar).catch(() => undefined);
+    api.mirrorStatus().then(setMirror).catch(() => undefined);
   }, []);
 
   useEffect(() => {
     refresh();
-    const subs = [onRemindersChanged(refresh), onCalendarChanged(refresh)];
+    const subs = [onRemindersChanged(refresh), onCalendarChanged(refresh), onMirrorChanged(refresh)];
     return () => subs.forEach((p) => void p.then((u) => u()));
   }, [refresh]);
 
@@ -40,6 +44,38 @@ export function ConnectorsTab() {
 
   return (
     <div className="connectors">
+      <ConnectorCard
+        icon={<TodoistGlyph />}
+        tone="app"
+        name="Todoist"
+        description={
+          mirror?.todoist && !mirror.todoist.two_way
+            ? "Your Todoist projects, coming in as they change."
+            : "Your Todoist projects, in sync both ways."
+        }
+        connected={!!mirror?.todoist}
+        open={open === "todoist"}
+        onToggle={() => toggle("todoist")}
+      >
+        <div className="transfer in-connector">
+          <TodoistConnector onFinished={onDone} />
+        </div>
+      </ConnectorCard>
+
+      <ConnectorCard
+        icon={<ThingsGlyph />}
+        tone="app"
+        name="Things 3"
+        description="Your Things library, coming in as it changes."
+        connected={!!mirror?.things}
+        open={open === "things"}
+        onToggle={() => toggle("things")}
+      >
+        <div className="transfer in-connector">
+          <ThingsConnector onFinished={onDone} />
+        </div>
+      </ConnectorCard>
+
       <ConnectorCard
         icon={<CalendarGlyph />}
         tone="calendar"
@@ -69,7 +105,7 @@ export function ConnectorsTab() {
   );
 }
 
-export type Id = "reminders" | "calendar";
+export type Id = "todoist" | "things" | "reminders" | "calendar";
 
 function ConnectorCard({
   icon,

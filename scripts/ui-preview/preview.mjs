@@ -1702,10 +1702,10 @@ await shot("full-transfer", FULL, full({ settings: DARK }), async (p) => {
 await shot("full-transfer-todoist", FULL, full({ settings: DARK }), async (p) => {
   await openApp(p, "Todoist");
   await p.getByLabel("Todoist API token").fill("bad-token");
-  await p.getByRole("button", { name: "Connect", exact: true }).click();
+  await p.locator(".tr-token").getByRole("button", { name: "Connect", exact: true }).click();
   await p.locator(".tr-error").waitFor();
   await p.getByLabel("Todoist API token").fill("good-token");
-  await p.getByRole("button", { name: "Connect", exact: true }).click();
+  await p.locator(".tr-token").getByRole("button", { name: "Connect", exact: true }).click();
   await p.locator(".tr-preview").waitFor();
   const label = await p.locator(".tr-preview .primary").textContent();
   if (label !== "Import 381 tasks") throw new Error(`move-in count wrong: ${label}`);
@@ -1752,14 +1752,14 @@ await shot("full-connectors-todoist-two-way", FULL, full({ settings: DARK, mirro
   await openApp(p, "Todoist");
   const sw = p.getByRole("switch", { name: /Two-way sync/ });
   await sw.waitFor();
-  if ((await sw.getAttribute("aria-checked")) !== "true") throw new Error("two-way should be on by default");
+  if (!(await sw.isChecked())) throw new Error("two-way should be on by default");
   if (!(await p.locator(".tr-sync").textContent()).includes("go to Todoist too")) throw new Error("two-way text missing");
 });
 await shot("full-connectors-todoist-one-way", FULL, full({ settings: DARK, mirror: { things: null, todoist: TODOIST_LINK } }), async (p) => {
   await openApp(p, "Todoist");
   await p.getByRole("switch", { name: /Two-way sync/ }).click();
   await p.waitForTimeout(250);
-  if ((await p.getByRole("switch", { name: /Two-way sync/ }).getAttribute("aria-checked")) !== "false") throw new Error("one-way didn't take");
+  if (await p.getByRole("switch", { name: /Two-way sync/ }).isChecked()) throw new Error("one-way didn't take");
   if (!(await p.locator(".tr-sync").textContent()).includes("Your edits here stay in TodoCity")) throw new Error("one-way text missing");
   if (!(await p.locator(".connector", { hasText: "Todoist" }).first().textContent()).includes("coming in as they change")) throw new Error("card should say one-way");
 });
@@ -1778,7 +1778,7 @@ await shot("full-connectors-things-map", FULL, full({ settings: DARK }), async (
 await shot("panel-connectors-todoist-done", PANEL, scenario(), async (p) => {
   await openApp(p, "Todoist");
   await p.getByLabel("Todoist API token").fill("good-token");
-  await p.getByRole("button", { name: "Connect", exact: true }).click();
+  await p.locator(".tr-token").getByRole("button", { name: "Connect", exact: true }).click();
   await p.locator(".tr-preview").waitFor();
   if (!(await p.locator(".tr-options").textContent()).includes("Changes go both ways")) throw new Error("keep-in-sync should say both ways");
   await p.getByRole("button", { name: /^Import \d/ }).click();

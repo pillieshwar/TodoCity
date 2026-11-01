@@ -551,6 +551,10 @@ impl Store {
                             {
                                 if let Some(next) = self.next_occurrence(id)? {
                                     id = next;
+                                    self.conn.execute(
+                                        "UPDATE imports SET task_id = ?3 WHERE source = ?1 AND ext_id = ?2",
+                                        params![source, item.ext_id, id],
+                                    )?;
                                 }
                             }
                             let patch = patch_for(&old, &new, project, opts.today);

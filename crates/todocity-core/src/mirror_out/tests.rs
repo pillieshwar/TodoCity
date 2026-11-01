@@ -258,6 +258,47 @@ fn both(a: &mut Mac, b: &mut Mac) {
 
 const LATER: i64 = WAIT_FOR_OTHER_MAC_MS + 60_000;
 
+/// Temporary: what each side holds, for a failing test's output.
+fn dump(label: &str, app: &App, macs: &[&Mac]) {
+    println!("── {label}: closed {:?}", app.closed);
+    for i in app.items.values() {
+        println!(
+            "  there {} {:?} due {:?} rec {:?} done {}",
+            i.ext_id, i.task.title, i.task.due_date, i.task.recurrence, i.done
+        );
+    }
+    for m in macs {
+        for t in m.store.all().unwrap() {
+            let uid = m.store.uid_of(t.id).unwrap();
+            println!(
+                "  {} task {} {:?} due {:?} series {:?} rec {:?} done {} next {:?} uid {:?}",
+                m.device,
+                t.id,
+                t.title,
+                t.due_date,
+                t.series_date,
+                t.recurrence,
+                t.done,
+                t.next_id,
+                uid
+            );
+        }
+        let mut st = m
+            .store
+            .conn
+            .prepare("SELECT ext_id, task_id, base FROM imports")
+            .unwrap();
+        let rows: Vec<(String, Option<i64>, Option<String>)> = st
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        for r in rows {
+            println!("  {} link {:?}", m.device, r);
+        }
+    }
+}
+
 // ── One Mac ─────────────────────────────────────────────────────────────────
 
 #[test]
@@ -750,15 +791,22 @@ fn a_repeat_finished_on_one_mac_moves_on_there_once() {
     );
     both(&mut a, &mut b);
     // B hears first: it waits for A rather than finish it there too.
+    dump("after done on A, sent to B", &app, &[&a, &b]);
     let p = b.pass(&mut app);
+    println!("B ops {:?} waiting {}", p.out.ops, p.out.waiting);
     assert_eq!(p.out.waiting, 1);
     assert_eq!(app.closed.get("a"), None);
-    a.pass(&mut app);
+    let p = a.pass(&mut app);
+    println!("A ops {:?}", p.out.ops);
+    dump("after A's pass", &app, &[&a, &b]);
     assert_eq!(app.closed["a"], 1);
-    for _ in 0..3 {
-        b.pass_at(&mut app, LATER);
-        a.pass_at(&mut app, LATER);
+    for i in 0..3 {
+        let p = b.pass_at(&mut app, LATER);
+        println!("loop {i} B pull {:?} ops {:?}", p.pull, p.out.ops);
+        let p = a.pass_at(&mut app, LATER);
+        println!("loop {i} A pull {:?} ops {:?}", p.pull, p.out.ops);
         both(&mut a, &mut b);
+        dump(&format!("loop {i}"), &app, &[&a, &b]);
     }
     assert_eq!(app.closed["a"], 1);
     assert_eq!(app.get("a").task.due_date.as_deref(), Some("2027-03-08"));

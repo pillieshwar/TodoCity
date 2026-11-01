@@ -137,6 +137,9 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
   const [evDrag, setEvDrag] = useState<{ ev: CalendarEvent; mode: "move" | "stretch"; x: number; y: number; colW: number; preview: CalendarEvent } | null>(null);
   // A meeting with guests waits for "Move for everyone?".
   const [askMove, setAskMove] = useState<{ from: CalendarEvent; to: CalendarEvent } | null>(null);
+  // The drag as it is now, for the drop (the listeners are set up when it starts).
+  const evDragNow = useRef(evDrag);
+  evDragNow.current = evDrag;
   const replaceEvent = (from: CalendarEvent, to: CalendarEvent) =>
     setEvents((es) => es.map((e) => (occurrenceKey(e) === occurrenceKey(from) ? to : e)));
   const moveLabel = (e: CalendarEvent) =>
@@ -171,7 +174,7 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
       setEvDrag((d) => (d && !sameTime(d.preview, preview) ? { ...d, preview } : d));
     };
     const drop = () => {
-      const d = evDrag;
+      const d = evDragNow.current ?? evDrag;
       setEvDrag(null);
       if (sameTime(d.ev, d.preview)) return;
       if (d.ev.movable === "everyone") setAskMove({ from: d.ev, to: d.preview });

@@ -69,7 +69,9 @@ pub const WAIT_FOR_OTHER_MAC_MS: i64 = 10 * 60 * 1000;
 /// more than half of those linked, is held back.
 pub const MAX_SAFE_DELETES: usize = 20;
 
-/// One change to make in the other app.
+/// One change to make in the other app. (A pass holds a handful, so the
+/// two bases an update carries aren't worth boxing.)
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Op {

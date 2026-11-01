@@ -301,7 +301,9 @@ impl Store {
     /// The occurrence a finished repeating task made: by `next_id` on the
     /// Mac that finished it, by its series uid on every other Mac.
     pub(crate) fn next_occurrence(&self, id: i64) -> Result<Option<i64>, StoreError> {
-        let row: Option<(Option<i64>, Option<String>, Option<String>, Option<String>)> = self
+        // next_id, uid, series day, due day.
+        type Row = (Option<i64>, Option<String>, Option<String>, Option<String>);
+        let row: Option<Row> = self
             .conn
             .query_row(
                 "SELECT next_id, uid, series_date, due_date FROM tasks WHERE id = ?1",

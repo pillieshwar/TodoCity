@@ -3484,3 +3484,10 @@ button.tf-chip { cursor: pointer; }
 .rep-pills span.last { border-color: var(--teal); color: var(--teal); font-weight: 600; }
 .rep-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .tf-menu.rep-edit > * { flex-shrink: 0; }
+
+/* Calendar: meetings you can move */
+.wg-event.movable { cursor: grab; }
+.wg-event.movable:hover { box-shadow: 0 0 0 1px color-mix(in srgb, var(--ev) 55%, transparent); }
+.wg-event.lifted { cursor: grabbing; z-index: 5; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18), 0 0 0 1.5px var(--ev); }
+.week-grid.moving-event, .week-grid.moving-event * { cursor: grabbing !important; user-select: none; }
+.move-dialog { max-width: 400px; }

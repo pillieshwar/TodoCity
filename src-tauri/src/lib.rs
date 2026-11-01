@@ -670,6 +670,27 @@ async fn calendar_events(
         .map_err(err)?
 }
 
+/// Move a meeting in Calendar (dragged in TodoCity's Calendar). Only events
+/// `meeting_move::movable` allows; meetings with guests need `everyone`.
+#[tauri::command]
+async fn calendar_move_event(
+    settings: State<'_, Settings>,
+    id: String,
+    at: String,
+    start: String,
+    end: String,
+    everyone: bool,
+) -> CmdResult<calendar::EventInfo> {
+    if !settings.get().calendar_enabled {
+        return Err("Turn on Calendar in Settings → Connectors first.".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        calendar::move_event(&id, &at, &start, &end, everyone)
+    })
+    .await
+    .map_err(err)?
+}
+
 /// System Settings → Privacy & Security → Calendars.
 #[tauri::command]
 fn calendar_open_privacy_settings() -> CmdResult<()> {
@@ -1804,6 +1825,7 @@ pub fn run() {
             calendar_calendars,
             calendar_set,
             calendar_events,
+            calendar_move_event,
             calendar_open_privacy_settings,
             open_source,
             open_url,

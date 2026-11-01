@@ -326,6 +326,14 @@ function mockTauri(s) {
     ],
     calendar_events: (a) =>
       (s.events ?? []).filter((e) => e.start.slice(0, 10) <= a.to && (e.end.slice(0, 10) > a.from || e.start.slice(0, 10) >= a.from)),
+    calendar_move_event: (a) => {
+      window.__moved = a;
+      const at = (s.events ?? []).find((e) => e.id === a.id && e.start === a.at);
+      if (!at) throw new Error("This meeting just changed in Calendar. Take another look and move it again.");
+      const now = { ...at, start: a.start, end: a.end };
+      s.events = s.events.map((e) => (e === at ? now : e));
+      return now;
+    },
     autostart_enabled: () => true,
     panel_full: () => !!s.full,
     // v0.4.66: the agent panel and "Send to agent".
@@ -1580,6 +1588,67 @@ await shot("full-when-editor", FULL, full({ settings: DARK }), async (p) => {
   await p.locator(".tf-menu").waitFor();
 });
 await shot("full-upcoming", FULL, full({ settings: DARK }), side(/Calendar/));
+// v0.4.71: drag a meeting to a new time; it moves in Apple Calendar too.
+const MOVE_EVENTS = [
+  { id: "m1", title: "Lunch with Sam", start: `${day(1)}T12:00:00`, end: `${day(1)}T13:00:00`, all_day: false, calendar: "Home", color: "#16a34a", movable: "yes" },
+  { id: "m2", title: "Roadmap sync", start: `${day(1)}T15:00:00`, end: `${day(1)}T16:00:00`, all_day: false, calendar: "Work", color: "#3b82f6", movable: "everyone" },
+  { id: "m3", title: "Vendor call", start: `${day(1)}T10:00:00`, end: `${day(1)}T10:30:00`, all_day: false, calendar: "Work", color: "#8b5cf6", movable: "no" },
+];
+const dragMeeting = async (p, title, dy, dx = 0) => {
+  const block = p.locator(".wg-event", { hasText: title }).first();
+  await block.scrollIntoViewIfNeeded();
+  const b = await block.boundingBox();
+  await p.mouse.move(b.x + b.width / 2, b.y + 8);
+  await p.mouse.down();
+  await p.mouse.move(b.x + b.width / 2 + dx / 2, b.y + 8 + dy / 2, { steps: 5 });
+  await p.mouse.move(b.x + b.width / 2 + dx, b.y + 8 + dy, { steps: 5 });
+  await p.waitForTimeout(120);
+};
+const meetings = (o = {}) => full({ settings: LIGHT, events: MOVE_EVENTS, ...o });
+await shot("full-meeting-dragging", FULL, meetings(), async (p) => {
+  await side(/Calendar/)(p);
+  await dragMeeting(p, "Lunch with Sam", 52);
+  await p.locator(".wg-event.lifted", { hasText: "1:00" }).waitFor();
+});
+await shot("full-meeting-moved", FULL, meetings(), async (p) => {
+  await side(/Calendar/)(p);
+  await dragMeeting(p, "Lunch with Sam", 52);
+  await p.mouse.up();
+  await p.waitForFunction(() => window.__moved?.id === "m1");
+  const m = await p.evaluate(() => window.__moved);
+  if (!m.start.endsWith("T13:00:00") || !m.end.endsWith("T14:00:00") || m.everyone) throw new Error(`moved wrong: ${JSON.stringify(m)}`);
+  await p.locator(".toast", { hasText: "Moved “Lunch with Sam”" }).waitFor();
+});
+await shot("full-meeting-undo", FULL, meetings(), async (p) => {
+  await side(/Calendar/)(p);
+  await dragMeeting(p, "Lunch with Sam", 52);
+  await p.mouse.up();
+  await p.locator(".toast", { hasText: "Moved" }).getByRole("button", { name: "Undo" }).click();
+  await p.waitForFunction(() => window.__moved?.start?.endsWith("T12:00:00"));
+});
+await shot("full-meeting-everyone", FULL, meetings(), async (p) => {
+  await side(/Calendar/)(p);
+  await dragMeeting(p, "Roadmap sync", 26);
+  await p.mouse.up();
+  await p.getByRole("dialog", { name: "Move “Roadmap sync” for everyone?" }).waitFor();
+  if (await p.evaluate(() => window.__moved)) throw new Error("moved before the OK");
+});
+await shot("full-meeting-everyone-moved", FULL, meetings(), async (p) => {
+  await side(/Calendar/)(p);
+  await dragMeeting(p, "Roadmap sync", 26);
+  await p.mouse.up();
+  await p.getByRole("button", { name: "Move for everyone" }).click();
+  await p.waitForFunction(() => window.__moved?.id === "m2");
+  const m = await p.evaluate(() => window.__moved);
+  if (!m.everyone || !m.start.endsWith("T15:30:00")) throw new Error(`moved wrong: ${JSON.stringify(m)}`);
+});
+await shot("full-meeting-invite-stays", FULL, meetings(), async (p) => {
+  await side(/Calendar/)(p);
+  await dragMeeting(p, "Vendor call", 52);
+  await p.mouse.up();
+  await p.waitForTimeout(200);
+  if (await p.evaluate(() => window.__moved)) throw new Error("an invite moved");
+});
 await shot("full-upcoming-light", FULL, full({ settings: LIGHT }), side(/Calendar/));
 await shot("full-upcoming-drag", FULL, full({ settings: DARK }), async (p) => {
   await side(/Calendar/)(p);

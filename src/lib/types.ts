@@ -461,6 +461,8 @@ export interface CalendarEvent {
   all_day: boolean;
   calendar: string;
   color: string | null;
+  /** Mirrors `meeting_move::Movable`: moves freely, after "Move for everyone?", or stays put. */
+  movable?: "yes" | "everyone" | "no";
 }
 
 /** Mirrors `calendar::Status`. */

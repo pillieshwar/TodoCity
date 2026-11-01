@@ -2,7 +2,7 @@
   "name": "todocity-ui-preview",
   "private": true,
   "description": "Screenshot tooling for the UI preview workflow only; never part of the app.",
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "MIT",
   "dependencies": {
     "playwright": "1.64.0"
   }

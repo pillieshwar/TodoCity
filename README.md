@@ -14,7 +14,7 @@ A small AI model runs entirely on your own computer, so nothing you capture ever
 [![Security](https://github.com/pillieshwar/TodoCity/actions/workflows/security.yml/badge.svg)](https://github.com/pillieshwar/TodoCity/actions/workflows/security.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/pillieshwar/TodoCity/badge)](https://scorecard.dev/viewer/?uri=github.com/pillieshwar/TodoCity)
 [![macOS 11+](https://img.shields.io/badge/macOS-11%2B-171b1a?logo=apple)](#install)
-[![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 <a href="https://github.com/pillieshwar/TodoCity/releases/latest/download/TodoCity-macOS.dmg"><img src="docs/download-mac.svg" alt="Download TodoCity for Mac" width="248" height="52"></a>
 
@@ -422,7 +422,7 @@ Bug reports, ideas and pull requests are welcome.
 2. Fork the repository and create a branch.
 3. Run `cargo test --workspace` and `npm test` before opening a pull request. CI builds the app on macOS and Windows and runs the security checks. Commit `Cargo.lock` and `package-lock.json` changes along with the dependency change that caused them.
 
-By opening a pull request, you agree that your contribution is shared under this project's [license](LICENSE), and that the project's author may also use it under other terms.
+By opening a pull request, you agree that your contribution is shared under the [MIT License](LICENSE).
 
 Maintainers: releases are cut from **Actions → Release → Run workflow** after bumping `version` in `package.json`, `src-tauri/tauri.conf.json` and `Cargo.toml`. The workflow builds a universal `.dmg`, signs the update archive and publishes `latest.json` for in-app updates.
 
@@ -432,6 +432,8 @@ Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY
 
 ## License
 
-> 🔒 **Source-available, non-commercial.** TodoCity is free, and its code is open to read, change and share for **personal and other non-commercial use** under the [PolyForm Noncommercial License 1.0.0](LICENSE). **Commercial use is not allowed** — that includes selling the app, a modified version, or a paid service built on it. Contributions are welcome and are shared under the same terms.
->
-> Copyright © 2026 Eshwar Pilli. All rights not granted by the license are reserved. Want to use it commercially? [Open an issue](https://github.com/pillieshwar/TodoCity/issues) to ask.
+TodoCity is free and open source under the [MIT License](LICENSE). Use it, change it and share it, including at work. Contributions are welcome and are shared under the same license.
+
+The MIT License covers the code. The TodoCity name and icon aren't part of it: if you share your own build or a fork, please give it its own name and icon. See [TRADEMARK.md](TRADEMARK.md).
+
+Copyright © 2026 Eshwar Pilli.

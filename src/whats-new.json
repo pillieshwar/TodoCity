@@ -1,4 +1,8 @@
 {
+  "0.4.73": [
+    "TodoCity is now open source under the MIT License: use it, change it and share it, including at work",
+    "Everything stays free, and the code is on GitHub for anyone to read"
+  ],
   "0.4.72": [
     "Pick your own keys: open Keyboard shortcuts (press ?) and click any key, like T for Today, to choose another",
     "Choose a key that's already taken and the two swap, so every key still does one thing",

@@ -381,14 +381,6 @@ impl Store {
         Ok(out)
     }
 
-    fn uid_of(&self, id: i64) -> Result<Option<String>, StoreError> {
-        Ok(self
-            .conn
-            .query_row("SELECT uid FROM tasks WHERE id = ?1", [id], |r| r.get(0))
-            .optional()?
-            .flatten())
-    }
-
     /// Record how sending `op` to `source` went.
     pub fn mirror_sent(&self, source: &str, op: &Op, sent: &Sent) -> Result<(), StoreError> {
         let json = |b: &Base| serde_json::to_string(b).unwrap_or_default();

@@ -431,6 +431,12 @@ CREATE INDEX agent_runs_task ON agent_runs (task_id);
 ALTER TABLE agent_runs ADD COLUMN transcript TEXT;
 ALTER TABLE agent_runs ADD COLUMN tail TEXT;
 "#,
+    // When this Mac joined one of the other app's projects to a project
+    // already here by name (milliseconds since 1970): new tasks in it wait a
+    // little, so another Mac that is sending them goes first.
+    r#"
+ALTER TABLE mirror_projects ADD COLUMN joined_ms INTEGER;
+"#,
 ];
 
 /// One task to bring in from another app, with its history.

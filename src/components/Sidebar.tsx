@@ -59,6 +59,10 @@ interface Props {
   onColor: (project: string, color: string | null) => void;
   /** Stop keeping a project in sync with Things 3 or Todoist. */
   onStopSync?: (project: string) => void;
+  /** Projects that can start syncing with Todoist ("Sync with Todoist"). */
+  syncable?: string[];
+  /** Start keeping a project in sync with Todoist. */
+  onStartSync?: (project: string) => void;
   /** The window's close, minimize and zoom buttons. */
   lights: ReactElement;
   /** The mode switcher (Work, Personal…), under the title. */
@@ -360,6 +364,22 @@ export function Sidebar(p: Props) {
                         />
                       ))}
                     </div>
+                    {!pr?.synced && p.onStartSync && p.syncable?.includes(name) && (
+                      <>
+                        <p className="sb-menu-label">Todoist</p>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setMenu(null);
+                            p.onStartSync?.(name);
+                          }}
+                        >
+                          Sync with Todoist
+                          <span className="sb-menu-note">Its open tasks go to Todoist too</span>
+                        </button>
+                      </>
+                    )}
                     {pr?.synced && p.onStopSync && (
                       <>
                         <p className="sb-menu-label">Synced from {SYNC_APPS[pr.synced] ?? pr.synced}</p>

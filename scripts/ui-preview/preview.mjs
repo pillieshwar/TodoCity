@@ -439,6 +439,16 @@ function mockTauri(s) {
       s.synced = { ...(s.synced ?? {}), [a.name]: null };
       return true;
     },
+    mirror_syncable: () => {
+      if (!s.mirror?.todoist?.two_way) return [];
+      const names = new Set((s.tasks ?? []).flatMap((t) => (t.project ? [t.project] : [])));
+      return [...names].filter((n) => !(s.synced ?? {})[n]);
+    },
+    mirror_sync_project: (a) => {
+      s.synced = { ...(s.synced ?? {}), [a.name]: "todoist" };
+      setTimeout(() => window.__emit?.("tasks-changed", null), 0);
+      return { joined: false };
+    },
     todoist_pick_files: () => ["/Users/sam/Downloads/Lisbon [2203306141].csv"],
     todoist_preview: (a) => {
       if (a.token && a.token !== "good-token") throw "Todoist didn't accept that token. Copy it again from Todoist → Settings → Integrations → Developer.";
@@ -2234,6 +2244,19 @@ await shot("full-project-synced", FULL, full({ settings: DARK, synced: { "Offsit
   await p.getByRole("button", { name: "More for Offsite 2026" }).click();
   await p.getByText("Synced from Things 3").waitFor();
   await p.getByRole("menuitem", { name: /Stop syncing/ }).waitFor();
+});
+await shot("full-project-sync-todoist", FULL, full({ settings: DARK, mirror: { things: null, todoist: { since: "2026-10-30T09:00:00Z", last: "2026-11-01T09:00:00Z", error: null, projects: 2, two_way: true, can_two_way: true } } }), async (p) => {
+  await side(/Offsite 2026/)(p);
+  await p.locator(".sb-b", { hasText: "Offsite 2026" }).hover();
+  await p.getByRole("button", { name: "More for Offsite 2026" }).click();
+  await p.getByRole("menuitem", { name: /Sync with Todoist/ }).waitFor();
+});
+await shot("full-project-without-todoist", FULL, full({ settings: DARK, mirror: { things: null, todoist: null } }), async (p) => {
+  await side(/Offsite 2026/)(p);
+  await p.locator(".sb-b", { hasText: "Offsite 2026" }).hover();
+  await p.getByRole("button", { name: "More for Offsite 2026" }).click();
+  await p.getByText("Add a section…").waitFor();
+  if (await p.getByRole("menuitem", { name: /Sync with Todoist/ }).count()) throw new Error("Sync with Todoist shows without two-way Todoist sync");
 });
 await shot("full-project-color", FULL, full({ settings: DARK }), async (p) => {
   await side(/Q4 launch/)(p);

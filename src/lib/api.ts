@@ -242,6 +242,10 @@ export const api = {
   mirrorSetTwoWay: (source: MirrorSource, on: boolean) => invoke<void>("mirror_set_two_way", { source, on }),
   /** Stop syncing one project; it becomes an ordinary project. */
   mirrorStopProject: (name: string) => invoke<boolean>("mirror_stop_project", { name }),
+  /** Projects that could start syncing with Todoist now (two-way on, not synced, not kept on this Mac only). */
+  mirrorSyncable: () => invoke<string[]>("mirror_syncable"),
+  /** "Sync with Todoist": make the project there (or link Todoist's of the same name); its open tasks follow. */
+  mirrorSyncProject: (name: string) => invoke<{ joined: boolean }>("mirror_sync_project", { name }),
   // Sync between your Macs.
   syncStatus: () => invoke<SyncStatus>("sync_status"),
   /** Show a pairing code here (turns sync on here if needed). */

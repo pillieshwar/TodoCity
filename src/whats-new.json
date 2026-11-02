@@ -1,4 +1,10 @@
 {
+  "0.4.75": [
+    "Send a TodoCity project to Todoist: open its ⋯ menu and choose Sync with Todoist",
+    "TodoCity makes the project in Todoist with its sections, or links to one with the same name, and its open tasks follow",
+    "From then on it syncs both ways like any other, so it's on your phone too",
+    "Each project goes only when you choose; your Inbox and finished tasks stay on your Mac"
+  ],
   "0.4.74": [
     "Todoist now syncs both ways: change, add, finish or delete a task in either app and the other follows",
     "Rather keep it one-way? Switch it in Settings → Connectors → Todoist",

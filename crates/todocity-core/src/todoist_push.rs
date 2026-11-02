@@ -359,6 +359,142 @@ pub fn commands(op: &Op, places: &mut Places, n: &mut usize) -> Result<Vec<Comma
     Ok(out)
 }
 
+// ── Making a project there ("Sync with Todoist") ───────────────────────────
+
+/// Names compared loosely: case and spacing don't matter.
+fn same_name(a: &str, b: &str) -> bool {
+    let norm = |s: &str| {
+        s.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
+    };
+    norm(a) == norm(b)
+}
+
+/// An open, top-level Todoist project named `name` that doesn't sync with
+/// another project here yet (`taken`: keys that do).
+pub fn same_name_project<'a>(
+    lib: &'a Library,
+    name: &str,
+    taken: &std::collections::HashSet<String>,
+) -> Option<&'a crate::todoist::Project> {
+    lib.projects.iter().find(|p| {
+        !p.inbox_project
+            && !p.is_deleted
+            && !p.is_archived
+            && p.parent_id.is_none()
+            && !taken.contains(&p.id)
+            && same_name(&p.name, name)
+    })
+}
+
+/// The sections `project` (a Todoist project id, or `None` for a new one)
+/// still needs for `floors`.
+pub fn missing_sections(lib: &Library, project: Option<&str>, floors: &[String]) -> Vec<String> {
+    let have: Vec<&str> = match project {
+        None => Vec::new(),
+        Some(id) => lib
+            .sections
+            .iter()
+            .filter(|s| !s.is_deleted && s.project_id == id)
+            .map(|s| s.name.as_str())
+            .collect(),
+    };
+    let mut out: Vec<String> = Vec::new();
+    for f in floors {
+        let f = f.trim();
+        if f.is_empty()
+            || have.iter().any(|h| same_name(h, f))
+            || out.iter().any(|o| same_name(o, f))
+        {
+            continue;
+        }
+        out.push(f.to_string());
+    }
+    out
+}
+
+/// The temporary id of the project a [`project_commands`] request makes.
+const NEW_PROJECT: &str = "project-new";
+
+/// Commands that make project `name` (when `into` is `None`) and its
+/// `sections`, or add `sections` to the existing project `into`.
+pub fn project_commands(name: &str, into: Option<&str>, sections: &[String]) -> Vec<Command> {
+    let mut out = Vec::new();
+    let project = match into {
+        Some(id) => id.to_string(),
+        None => {
+            out.push(Command {
+                kind: "project_add",
+                temp_id: Some(NEW_PROJECT.into()),
+                args: json!({ "name": name.trim() }),
+            });
+            NEW_PROJECT.to_string()
+        }
+    };
+    for (i, s) in sections.iter().enumerate() {
+        out.push(Command {
+            kind: "section_add",
+            temp_id: Some(format!("section-new-{i}")),
+            args: json!({ "name": s, "project_id": project, "section_order": i + 1 }),
+        });
+    }
+    out
+}
+
+/// Make project `name` there, with `sections`, or add `sections` to the
+/// existing project `into`. Returns the new project's id; `None` when
+/// Todoist took the request without saying (it had just made the same one,
+/// for another Mac): look it up by name.
+///
+/// The ids come from the name and the hour, so two Macs asking at nearly
+/// the same moment make one project.
+pub async fn make_project(
+    client: &reqwest::Client,
+    base: &str,
+    token: &str,
+    name: &str,
+    into: Option<&str>,
+    sections: &[String],
+) -> Result<Option<String>, String> {
+    let cmds = project_commands(name, into, sections);
+    if cmds.is_empty() {
+        return Ok(into.map(str::to_string));
+    }
+    let hour = chrono::Utc::now().format("%Y-%m-%dT%H");
+    let seed = format!(
+        "project\u{1f}{}\u{1f}{}\u{1f}{hour}",
+        name.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase(),
+        into.unwrap_or("")
+    );
+    let wired: Vec<Value> = cmds.iter().map(|c| wire(c, &seed)).collect();
+    let auth = format!("Bearer {}", token.trim());
+    let answer = send(client, base, &auth, &wired).await?;
+    let statuses = answer.get("sync_status");
+    // The project itself must be there; a section that didn't take is
+    // made again with the first task that goes in it.
+    if into.is_none() {
+        let uuid = wired[0]["uuid"].as_str().unwrap_or_default();
+        if let Err((_, msg)) = status(statuses.and_then(|s| s.get(uuid))) {
+            return Err(msg);
+        }
+        let id = answer
+            .get("temp_id_mapping")
+            .and_then(|m| m.get(NEW_PROJECT))
+            .and_then(|v| match v {
+                Value::String(s) => Some(s.clone()),
+                Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            });
+        return Ok(id);
+    }
+    Ok(into.map(str::to_string))
+}
+
 /// A command as Todoist takes it, with a uuid made from what it does.
 fn wire(c: &Command, seed: &str) -> Value {
     let mut v = json!({
@@ -717,6 +853,57 @@ mod tests {
         assert_eq!(wire(&c, "x")["uuid"], wire(&c, "x")["uuid"]);
         assert_ne!(wire(&c, "x")["uuid"], wire(&c, "y")["uuid"]);
         assert_eq!(wire(&c, "x")["uuid"].as_str().unwrap().len(), 36);
+    }
+
+    #[test]
+    fn a_project_is_found_by_its_name_once() {
+        let mut l = lib();
+        l.projects.push(Project {
+            id: "300".into(),
+            name: "garden  Reno".into(),
+            ..Default::default()
+        });
+        l.projects.push(Project {
+            id: "301".into(),
+            name: "Garden reno".into(),
+            is_archived: true,
+            ..Default::default()
+        });
+        let none = std::collections::HashSet::new();
+        assert_eq!(
+            same_name_project(&l, "Garden reno", &none).map(|p| p.id.as_str()),
+            Some("300")
+        );
+        let taken: std::collections::HashSet<String> = ["300".to_string()].into();
+        assert!(same_name_project(&l, "Garden reno", &taken).is_none());
+        assert!(same_name_project(&l, "Inbox", &none).is_none());
+    }
+
+    #[test]
+    fn a_new_project_comes_with_its_sections() {
+        let l = lib();
+        let floors = vec!["Beds".to_string(), "beds".to_string(), "Tools".to_string()];
+        let need = missing_sections(&l, None, &floors);
+        assert_eq!(need, ["Beds", "Tools"]);
+        let cmds = project_commands("Garden reno", None, &need);
+        assert_eq!(cmds.len(), 3);
+        assert_eq!(cmds[0].kind, "project_add");
+        assert_eq!(cmds[0].args["name"], "Garden reno");
+        assert_eq!(cmds[1].kind, "section_add");
+        assert_eq!(cmds[1].args["project_id"], NEW_PROJECT);
+        assert_eq!(cmds[2].args["name"], "Tools");
+    }
+
+    #[test]
+    fn an_existing_project_gets_only_the_sections_it_lacks() {
+        let l = lib();
+        let s = l.sections.iter().find(|s| !s.is_deleted).unwrap();
+        let floors = vec![s.name.to_uppercase(), "Paint".to_string()];
+        let need = missing_sections(&l, Some(&s.project_id), &floors);
+        assert_eq!(need, ["Paint"]);
+        let cmds = project_commands("x", Some(&s.project_id), &need);
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(cmds[0].args["project_id"], s.project_id.as_str());
     }
 
     #[test]

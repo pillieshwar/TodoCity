@@ -8,6 +8,11 @@
 //!
 //! Todoist syncs both ways unless the person picks one-way: after each read,
 //! changes made here go back through its API. Things comes into TodoCity.
+//!
+//! A project that starts here joins with "Sync with Todoist" (its ⋯ menu):
+//! the project is made in Todoist, or linked to one there with the same name,
+//! and the next pass sends its open tasks. One project at a time, never the
+//! Inbox, never a project kept on this Mac only.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -628,4 +633,162 @@ pub fn mirror_stop_project(app: AppHandle, name: String) -> CmdResult<bool> {
     let _ = app.emit("mirror-changed", ());
     let _ = app.emit("tasks-changed", ());
     Ok(stopped)
+}
+
+/// How "Sync with Todoist" went.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectSynced {
+    /// Todoist already had a project with that name; the two are linked.
+    pub joined: bool,
+}
+
+/// The projects here that could start syncing with Todoist now: with
+/// two-way Todoist sync on, every project not synced with an app yet and
+/// not kept on this Mac only.
+#[tauri::command]
+pub fn mirror_syncable(app: AppHandle) -> CmdResult<Vec<String>> {
+    let on = app
+        .state::<Mirror>()
+        .link(Which::Todoist)
+        .is_some_and(|l| l.two_way);
+    if !on {
+        return Ok(Vec::new());
+    }
+    let local_only: HashSet<String> = crate::sync::local_only_projects(&app)
+        .into_iter()
+        .map(|p| p.to_lowercase())
+        .collect();
+    let state = app.state::<AppState>();
+    let store = state.store.lock().map_err(err)?;
+    Ok(store
+        .projects()
+        .map_err(err)?
+        .into_iter()
+        .filter(|p| p.synced.is_none() && !local_only.contains(&p.name.to_lowercase()))
+        .map(|p| p.name)
+        .collect())
+}
+
+/// "Sync with Todoist": make project `name` in Todoist with its sections
+/// (or link it to Todoist's project of that name), then let the next pass
+/// send its open tasks.
+#[tauri::command]
+pub async fn mirror_sync_project(app: AppHandle, name: String) -> CmdResult<ProjectSynced> {
+    let m = app.state::<Mirror>();
+    let link = m
+        .link(Which::Todoist)
+        .ok_or("Connect Todoist in Settings → Connectors to sync projects with it.")?;
+    if !link.two_way {
+        return Err(
+            "Switch Todoist to two-way in Settings → Connectors to send projects there.".into(),
+        );
+    }
+    let local_only = crate::sync::local_only_projects(&app);
+    if local_only
+        .iter()
+        .any(|p| p.to_lowercase() == name.to_lowercase())
+    {
+        return Err(format!(
+            "{name} is kept on this Mac only. Switch that off in Settings → Sync to send it to Todoist."
+        ));
+    }
+    let token = keychain()
+        .and_then(|k| k.get_password().ok())
+        .ok_or("Connect Todoist again in Settings → Connectors to keep it in sync.")?;
+    let _one = m.busy.lock().await;
+    let source = todoist::SOURCE;
+    let state = app.state::<AppState>();
+    // Already syncing (another window, or a double click): nothing to do.
+    let (taken, floors) = {
+        let store = state.store.lock().map_err(err)?;
+        let projects = store.mirror_projects(None).map_err(err)?;
+        if projects
+            .iter()
+            .any(|p| !p.stopped && p.project.to_lowercase() == name.to_lowercase())
+        {
+            return Ok(ProjectSynced { joined: false });
+        }
+        let taken: HashSet<String> = projects
+            .into_iter()
+            .filter(|p| !p.stopped && p.source == source)
+            .map(|p| p.key)
+            .collect();
+        let floors: Vec<String> = store
+            .floors()
+            .map_err(err)?
+            .into_iter()
+            .filter(|f| f.project.to_lowercase() == name.to_lowercase())
+            .map(|f| f.name)
+            .collect();
+        (taken, floors)
+    };
+    let client = reqwest::Client::builder()
+        .user_agent(concat!("TodoCity/", env!("CARGO_PKG_VERSION")))
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(err)?;
+    let read = |lib: Result<todoist::Library, TodoistError>| {
+        lib.map_err(|e| match e {
+            TodoistError::BadToken => {
+                "Todoist no longer accepts the saved token. Connect it again in Settings → Connectors.".to_string()
+            }
+            e => e.to_string(),
+        })
+    };
+    let since = DateTime::parse_from_rfc3339(&link.since)
+        .map(|t| t.with_timezone(&Utc))
+        .unwrap_or_else(|_| Utc::now());
+    let mut lib =
+        read(todoist::fetch_live(&client, todoist::API_BASE, &token, since, Utc::now()).await)?;
+    use todocity_core::todoist_push::{make_project, missing_sections, same_name_project};
+    let found = same_name_project(&lib, &name, &taken).map(|p| (p.id.clone(), p.name.clone()));
+    let (key, there, joined) = match found {
+        Some((id, there)) => {
+            let need = missing_sections(&lib, Some(&id), &floors);
+            if !need.is_empty() {
+                // A section that doesn't take now comes with its first task.
+                if let Err(e) =
+                    make_project(&client, todoist::API_BASE, &token, &name, Some(&id), &need).await
+                {
+                    log::warn!("sections for {name} in Todoist: {e}");
+                }
+            }
+            (id, there, true)
+        }
+        None => {
+            let need = missing_sections(&lib, None, &floors);
+            match make_project(&client, todoist::API_BASE, &token, &name, None, &need).await? {
+                Some(id) => (id, name.trim().to_string(), false),
+                None => {
+                    // Another Mac made it a moment ago: link to that one.
+                    lib = read(
+                        todoist::fetch_live(&client, todoist::API_BASE, &token, since, Utc::now())
+                            .await,
+                    )?;
+                    let p = same_name_project(&lib, &name, &taken).ok_or_else(|| {
+                        format!("Todoist is still setting up {name}. Choose Sync with Todoist again in a moment.")
+                    })?;
+                    (p.id.clone(), p.name.clone(), true)
+                }
+            }
+        }
+    };
+    let live: HashSet<String> = lib.tasks.iter().map(|t| t.id.clone()).collect();
+    let linked = {
+        let store = state.store.lock().map_err(err)?;
+        store
+            .mirror_link_project(source, &name, &key, &there, joined, &live)
+            .map_err(err)?
+    };
+    if !linked {
+        return Err(format!(
+            "Todoist's {there} already syncs with another project here. Rename {name} to sync it as a new project."
+        ));
+    }
+    log::info!("{name} now syncs with Todoist");
+    drop(_one);
+    m.poke();
+    let _ = app.emit("mirror-changed", ());
+    let _ = app.emit("tasks-changed", ());
+    Ok(ProjectSynced { joined })
 }

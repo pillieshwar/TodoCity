@@ -39,6 +39,8 @@ import {
   onPanelFull,
   onSettingsChanged,
   onShortcutsChanged,
+  onMirrorChanged,
+  onSyncChanged,
   onTasksChanged,
   onUpdateStatus,
   onAgentChanges,
@@ -204,6 +206,8 @@ export default function App() {
   const setFocusToday = (f: boolean | ((v: boolean) => boolean)) =>
     setList((l) => ((typeof f === "function" ? f(l === "today") : f) ? "today" : "inbox"));
   const [projectStats, setProjectStats] = useState<ProjectSummary[]>([]);
+  // Projects that could start syncing with Todoist ("Sync with Todoist").
+  const [syncable, setSyncable] = useState<string[]>([]);
   // Each project's headings: the floors of its building.
   const [floorList, setFloorList] = useState<FloorSummary[]>([]);
   // Tasks selected for batch actions, and where a Shift-click range starts.
@@ -278,6 +282,7 @@ export default function App() {
   const refresh = useCallback(async () => {
     try {
       api.listProjects().then(setProjectStats, () => undefined);
+      api.mirrorSyncable().then(setSyncable, () => undefined);
       api.listFloors().then(setFloorList, () => undefined);
       if (fullRef.current) api.cityWindows().then(setCityWins, () => undefined);
       setTasks(await api.listTasks(today));
@@ -370,6 +375,9 @@ export default function App() {
     const subs = [
       onCapture((r) => void handleCapture(r)),
       onTasksChanged(() => void refresh()),
+      // Todoist connected, two-way switched, or a project kept on this Mac.
+      onMirrorChanged(() => void api.mirrorSyncable().then(setSyncable, () => undefined)),
+      onSyncChanged(() => void api.mirrorSyncable().then(setSyncable, () => undefined)),
       onOpenTab((t) => {
         const p = pageFromTab(t);
         if (p) openSettings(p);
@@ -1781,6 +1789,17 @@ export default function App() {
                 .then(() => refresh())
                 .catch((e) => setError(String(e)))
             }
+            syncable={syncable}
+            onStartSync={(project) => {
+              show(`Sending ${project} to Todoist…`);
+              void api
+                .mirrorSyncProject(project)
+                .then((r) => {
+                  void refresh();
+                  show(r.joined ? `${project} now syncs with your Todoist project of the same name` : `${project} now syncs with Todoist`);
+                })
+                .catch((e) => setError(String(e)));
+            }}
             onStopSync={(project) =>
               void api
                 .mirrorStopProject(project)

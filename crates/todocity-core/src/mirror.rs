@@ -114,6 +114,9 @@ pub struct MirrorProject {
     pub project: String,
     pub source_name: String,
     pub stopped: bool,
+    /// When it was joined to a project already here by name (ms since 1970).
+    #[serde(skip)]
+    pub joined_ms: Option<i64>,
 }
 
 /// The line that links a task in the other app to the same task here.
@@ -238,7 +241,7 @@ impl Store {
     /// The other app's projects and the projects here they map to.
     pub fn mirror_projects(&self, source: Option<&str>) -> Result<Vec<MirrorProject>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT source, key, project, source_name, stopped FROM mirror_projects
+            "SELECT source, key, project, source_name, stopped, joined_ms FROM mirror_projects
              WHERE ?1 IS NULL OR source = ?1 ORDER BY source, project",
         )?;
         let rows = stmt.query_map([source], |r| {
@@ -248,6 +251,7 @@ impl Store {
                 project: r.get(2)?,
                 source_name: r.get(3)?,
                 stopped: r.get(4)?,
+                joined_ms: r.get(5)?,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -260,6 +264,110 @@ impl Store {
             "UPDATE mirror_projects SET stopped = 1 WHERE project = ?1 AND stopped = 0",
             [name],
         )? > 0)
+    }
+
+    /// The project here that one of the other app's projects syncs with
+    /// right now, if any.
+    pub fn mirror_project_of_key(
+        &self,
+        source: &str,
+        key: &str,
+    ) -> Result<Option<String>, StoreError> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT project FROM mirror_projects WHERE source = ?1 AND key = ?2 AND stopped = 0",
+                params![source, key],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Start keeping project `name` in step with the other app's project
+    /// `key` ("Sync with Todoist"), exactly as if it had come from there.
+    /// The next pass sends its open tasks.
+    ///
+    /// * `joined`: `key` was already there (found by name) rather than made
+    ///   just now; new tasks wait a little in case another Mac sends them.
+    /// * `live`: every task id the other app has right now. When the
+    ///   project synced before and was stopped, tasks deleted here meanwhile
+    ///   stay there (as "Stop syncing" promised), and tasks it no longer has
+    ///   are sent again rather than removed here.
+    ///
+    /// Returns false when `key` already syncs with another project here.
+    pub fn mirror_link_project(
+        &self,
+        source: &str,
+        name: &str,
+        key: &str,
+        source_name: &str,
+        joined: bool,
+        live: &HashSet<String>,
+    ) -> Result<bool, StoreError> {
+        if let Some(other) = self.mirror_project_of_key(source, key)? {
+            return Ok(other.to_lowercase() == name.to_lowercase());
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        let name = self
+            .create_project(name)?
+            .unwrap_or_else(|| name.to_string());
+        // Keys it synced with before, and the new one.
+        let mut keys: HashSet<String> = self
+            .mirror_projects(Some(source))?
+            .into_iter()
+            .filter(|m| m.stopped && m.project.to_lowercase() == name.to_lowercase())
+            .map(|m| m.key)
+            .collect();
+        keys.insert(key.to_string());
+        let mut rows: Vec<(String, Option<i64>, Option<String>)> = Vec::new();
+        {
+            let mut stmt = self.conn.prepare(
+                "SELECT i.ext_id, t.id, i.base FROM imports i
+                 LEFT JOIN tasks t ON t.id = i.task_id
+                 WHERE i.source = ?1 AND i.base IS NOT NULL",
+            )?;
+            let found = stmt.query_map([source], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            for row in found {
+                rows.push(row?);
+            }
+        }
+        for (ext, task, base) in rows {
+            let Some(base) = base.and_then(|b| serde_json::from_str::<Base>(&b).ok()) else {
+                continue;
+            };
+            if !keys.contains(&base.building) {
+                continue;
+            }
+            if !live.contains(&ext) {
+                // Gone there while stopped: the task here goes out again.
+                self.conn.execute(
+                    "DELETE FROM imports WHERE source = ?1 AND ext_id = ?2",
+                    params![source, ext],
+                )?;
+            } else if task.is_none() {
+                // Deleted here while stopped: it stays there.
+                self.conn.execute(
+                    "UPDATE imports SET task_id = NULL, base = NULL WHERE source = ?1 AND ext_id = ?2",
+                    params![source, ext],
+                )?;
+            }
+        }
+        for old in keys.iter().filter(|k| k.as_str() != key) {
+            self.conn.execute(
+                "DELETE FROM mirror_projects WHERE source = ?1 AND key = ?2",
+                params![source, old],
+            )?;
+        }
+        let joined_ms = joined.then(|| chrono::Utc::now().timestamp_millis());
+        self.conn.execute(
+            "INSERT INTO mirror_projects (source, key, project, source_name, stopped, joined_ms)
+             VALUES (?1, ?2, ?3, ?4, 0, ?5)
+             ON CONFLICT (source, key) DO UPDATE SET project = excluded.project,
+                 source_name = excluded.source_name, stopped = 0, joined_ms = excluded.joined_ms",
+            params![source, key, name, source_name, joined_ms],
+        )?;
+        tx.commit()?;
+        Ok(true)
     }
 
     /// Leave these of the other app's projects alone from now on (the ones
@@ -449,11 +557,24 @@ impl Store {
                         local = format!("{name} ({i})");
                         i += 1;
                     }
+                    // A project already here by that name is joined to it:
+                    // its tasks may be on their way there from another Mac.
+                    let here = project_exists(&local)?
+                        || self
+                            .conn
+                            .query_row(
+                                "SELECT 1 FROM tasks WHERE project = ?1 COLLATE NOCASE LIMIT 1",
+                                [&local],
+                                |_| Ok(()),
+                            )
+                            .optional()?
+                            .is_some();
+                    let joined = here.then(|| chrono::Utc::now().timestamp_millis());
                     let local = self.create_project(&local)?.unwrap_or(local);
                     self.conn.execute(
-                        "INSERT INTO mirror_projects (source, key, project, source_name, stopped)
-                         VALUES (?1, ?2, ?3, ?4, 0)",
-                        params![source, key, local, name],
+                        "INSERT INTO mirror_projects (source, key, project, source_name, stopped, joined_ms)
+                         VALUES (?1, ?2, ?3, ?4, 0, ?5)",
+                        params![source, key, local, name, joined],
                     )?;
                     map.insert(
                         key.clone(),
@@ -463,6 +584,7 @@ impl Store {
                             project: local,
                             source_name: name.clone(),
                             stopped: false,
+                            joined_ms: joined,
                         },
                     );
                 }

@@ -23,11 +23,14 @@ struct App {
     offline: bool,
     /// How many times each task was finished there.
     closed: BTreeMap<String, u32>,
+    /// Its projects: (id, name).
+    projects: Vec<(String, String)>,
 }
 
 impl App {
     fn new() -> Self {
         let mut a = App::default();
+        a.projects.push(("p1".into(), "Garden".into()));
         a.put("a", "p1", "Plant tulips");
         a.put("b", LOOSE_KEY, "Call Sam");
         a
@@ -49,6 +52,47 @@ impl App {
             },
         );
         self.items.get_mut(id).unwrap()
+    }
+    /// "Sync with Todoist" on `mac` for its project `name`: linked to a
+    /// project there with the same name, or made there. True when linked.
+    fn sync_project(&mut self, mac: &Mac, name: &str) -> bool {
+        let taken: HashSet<String> = mac
+            .store
+            .mirror_projects(Some("todoist"))
+            .unwrap()
+            .into_iter()
+            .filter(|m| !m.stopped)
+            .map(|m| m.key)
+            .collect();
+        let found = self
+            .projects
+            .iter()
+            .find(|(k, n)| n.to_lowercase() == name.to_lowercase() && !taken.contains(k))
+            .cloned();
+        let (key, there, joined) = match found {
+            Some((k, n)) => (k, n, true),
+            None => {
+                self.made += 1;
+                let k = format!("np{}", self.made);
+                self.projects.push((k.clone(), name.into()));
+                (k, name.to_string(), false)
+            }
+        };
+        let live: HashSet<String> = self.items.keys().cloned().collect();
+        assert!(mac
+            .store
+            .mirror_link_project("todoist", name, &key, &there, joined, &live)
+            .unwrap());
+        joined
+    }
+    fn count(&self, title: &str) -> usize {
+        self.items
+            .values()
+            .filter(|i| i.task.title == title)
+            .count()
+    }
+    fn named(&self, name: &str) -> usize {
+        self.projects.iter().filter(|(_, n)| n == name).count()
     }
     fn get(&self, id: &str) -> &Imported {
         &self.items[id]
@@ -164,8 +208,12 @@ impl Mac {
     /// One two-way pass `wait` ms from now.
     fn pass_at(&self, app: &mut App, later_ms: i64) -> Pass {
         let items: Vec<Imported> = app.items.values().cloned().collect();
-        let buildings = vec![("p1".to_string(), "Garden".to_string())];
-        let floors = vec![("Garden".to_string(), None)];
+        let buildings = app.projects.clone();
+        let floors: Vec<(String, Option<String>)> = app
+            .projects
+            .iter()
+            .map(|(_, n)| (n.clone(), None))
+            .collect();
         let pull = self
             .store
             .mirror(
@@ -863,4 +911,220 @@ fn a_project_kept_on_this_mac_sends_nothing() {
     assert!(p.out.ops.is_empty());
     assert_eq!(app.items.len(), 2);
     assert_eq!(app.get("a").task.title, "Plant tulips");
+}
+
+// ── Sync with Todoist: a project that starts here ───────────────────────────
+
+fn done(mac: &Mac, id: i64) {
+    mac.edit(
+        id,
+        TaskPatch {
+            done: Some(true),
+            ..Default::default()
+        },
+    );
+}
+
+#[test]
+fn a_project_made_here_stays_here_until_it_is_synced() {
+    let mut app = App::new();
+    let mac = Mac::new("a");
+    mac.pass(&mut app);
+    mac.add("Dig the beds", Some("Garden reno"));
+    let p = mac.pass(&mut app);
+    assert!(p.out.ops.is_empty());
+    assert!(app.find("Dig the beds").is_none());
+    // Moving a synced task in stops it syncing, as before.
+    let id = mac.find("Plant tulips").id;
+    mac.edit(
+        id,
+        TaskPatch {
+            project: Some(Some("Garden reno".into())),
+            ..Default::default()
+        },
+    );
+    mac.pass(&mut app);
+    assert_eq!(app.get("a").building, "p1");
+}
+
+#[test]
+fn sync_with_todoist_makes_the_project_and_sends_its_open_tasks() {
+    let mut app = App::new();
+    let mac = Mac::new("a");
+    mac.pass(&mut app);
+    mac.add("Dig the beds", Some("Garden reno"));
+    mac.add("Order gravel", Some("Garden reno"));
+    let old = mac.add("Measure the patio", Some("Garden reno"));
+    done(&mac, old);
+    mac.add("Buy seeds", None);
+    assert!(!app.sync_project(&mac, "Garden reno"));
+    assert_eq!(app.named("Garden reno"), 1);
+    let p = mac.pass(&mut app);
+    assert_eq!(p.out.ops.len(), 2);
+    let key = &app.projects.last().unwrap().0.clone();
+    assert_eq!(&app.find("Dig the beds").unwrap().building, key);
+    assert_eq!(&app.find("Order gravel").unwrap().building, key);
+    // Finished tasks and the Inbox stay here.
+    assert!(app.find("Measure the patio").is_none());
+    assert!(app.find("Buy seeds").is_none());
+    // Settled: nothing more to send, nothing doubled here.
+    assert!(mac.pass(&mut app).out.ops.is_empty());
+    assert_eq!(mac.titles().len(), 6);
+    // From now on it's like any synced project: new tasks and edits go.
+    mac.add("Fix the fence", Some("Garden reno"));
+    mac.edit(
+        mac.find("Dig the beds").id,
+        TaskPatch {
+            title: Some("Dig the raised beds".into()),
+            ..Default::default()
+        },
+    );
+    mac.pass(&mut app);
+    assert!(app.find("Fix the fence").is_some());
+    assert!(app.find("Dig the raised beds").is_some());
+    // And Todoist's changes come in.
+    let ext = app.find("Order gravel").unwrap().ext_id.clone();
+    app.items.get_mut(&ext).unwrap().task.title = "Order pea gravel".into();
+    mac.pass(&mut app);
+    assert_eq!(
+        mac.find("Order pea gravel").project.as_deref(),
+        Some("Garden reno")
+    );
+}
+
+#[test]
+fn sync_with_todoist_links_to_a_project_of_the_same_name() {
+    let mut app = App::new();
+    let mac = Mac::new("a");
+    mac.pass(&mut app);
+    // Todoist gets its own "Garden reno" after this Mac's last read.
+    app.projects.push(("p9".into(), "Garden reno".into()));
+    app.put("c", "p9", "Buy compost");
+    mac.add("Buy compost", Some("Garden reno"));
+    mac.add("Dig the beds", Some("Garden reno"));
+    assert!(app.sync_project(&mac, "Garden reno"));
+    assert_eq!(app.named("Garden reno"), 1);
+    mac.pass(&mut app);
+    mac.pass(&mut app);
+    assert_eq!(app.count("Buy compost"), 1);
+    assert_eq!(app.count("Dig the beds"), 1);
+    assert_eq!(app.find("Dig the beds").unwrap().building, "p9");
+    assert_eq!(
+        mac.titles(),
+        ["Buy compost", "Call Sam", "Dig the beds", "Plant tulips"]
+    );
+}
+
+#[test]
+fn a_project_kept_on_this_mac_is_never_sent_even_when_linked() {
+    let mut app = App::new();
+    let mut mac = Mac::new("a");
+    mac.pass(&mut app);
+    mac.add("Journal", Some("Diary"));
+    mac.local_only.insert("diary".into());
+    app.sync_project(&mac, "Diary");
+    let p = mac.pass(&mut app);
+    assert!(p.out.ops.is_empty());
+    assert!(app.find("Journal").is_none());
+}
+
+#[test]
+fn stopping_and_syncing_again_keeps_both_sides() {
+    let mut app = App::new();
+    let mac = Mac::new("a");
+    mac.pass(&mut app);
+    mac.add("Dig the beds", Some("Garden reno"));
+    mac.add("Order gravel", Some("Garden reno"));
+    mac.add("Fix the fence", Some("Garden reno"));
+    app.sync_project(&mac, "Garden reno");
+    mac.pass(&mut app);
+    assert!(mac.store.stop_mirroring_project("Garden reno").unwrap());
+    // While stopped: one deleted here, one deleted there.
+    mac.store.delete(mac.find("Dig the beds").id).unwrap();
+    let gravel = app.find("Order gravel").unwrap().ext_id.clone();
+    app.items.remove(&gravel);
+    mac.pass(&mut app);
+    assert!(app.find("Dig the beds").is_some());
+    assert!(app.sync_project(&mac, "Garden reno"));
+    assert_eq!(app.named("Garden reno"), 1);
+    mac.pass(&mut app);
+    mac.pass(&mut app);
+    // Nothing was deleted on either side by syncing again.
+    assert_eq!(app.count("Dig the beds"), 1);
+    assert_eq!(app.count("Order gravel"), 1);
+    assert_eq!(app.count("Fix the fence"), 1);
+    assert_eq!(
+        mac.titles(),
+        ["Call Sam", "Fix the fence", "Order gravel", "Plant tulips"]
+    );
+}
+
+#[test]
+fn two_macs_the_other_links_by_name_and_sends_nothing_twice() {
+    let mut app = App::new();
+    let (mut a, mut b) = two_macs(&mut app);
+    a.add("Dig the beds", Some("Garden reno"));
+    a.add("Order gravel", Some("Garden reno"));
+    both(&mut a, &mut b);
+    app.sync_project(&a, "Garden reno");
+    a.pass(&mut app);
+    let p = b.pass(&mut app);
+    assert!(p.out.ops.is_empty());
+    for _ in 0..2 {
+        a.pass_at(&mut app, LATER);
+        b.pass_at(&mut app, LATER);
+        both(&mut a, &mut b);
+    }
+    assert_eq!(app.named("Garden reno"), 1);
+    assert_eq!(app.count("Dig the beds"), 1);
+    assert_eq!(app.count("Order gravel"), 1);
+    assert_eq!(a.titles(), b.titles());
+    // B now syncs it too: a task added on B goes there once.
+    b.add("Fix the fence", Some("Garden reno"));
+    b.pass_at(&mut app, LATER);
+    both(&mut a, &mut b);
+    a.pass_at(&mut app, LATER);
+    assert_eq!(app.count("Fix the fence"), 1);
+}
+
+#[test]
+fn two_macs_the_other_waits_when_it_sees_the_project_before_its_tasks() {
+    let mut app = App::new();
+    let (mut a, mut b) = two_macs(&mut app);
+    a.add("Dig the beds", Some("Garden reno"));
+    a.add("Order gravel", Some("Garden reno"));
+    both(&mut a, &mut b);
+    // A made the project; B reads Todoist before A sends the tasks.
+    app.sync_project(&a, "Garden reno");
+    let p = b.pass(&mut app);
+    assert_eq!(p.out.waiting, 2);
+    assert!(p.out.ops.is_empty());
+    a.pass(&mut app);
+    let p = b.pass_at(&mut app, LATER);
+    assert!(p.out.ops.is_empty());
+    assert_eq!(app.count("Dig the beds"), 1);
+    assert_eq!(app.count("Order gravel"), 1);
+    assert_eq!(b.titles(), a.titles());
+}
+
+#[test]
+fn two_macs_choosing_sync_at_once_make_one_project() {
+    let mut app = App::new();
+    let (mut a, mut b) = two_macs(&mut app);
+    a.add("Dig the beds", Some("Garden reno"));
+    both(&mut a, &mut b);
+    assert!(!app.sync_project(&a, "Garden reno"));
+    // B's same-name check finds A's project and links to it.
+    assert!(app.sync_project(&b, "Garden reno"));
+    assert_eq!(app.named("Garden reno"), 1);
+    // B goes first, but waits for A.
+    assert_eq!(b.pass(&mut app).out.waiting, 1);
+    a.pass(&mut app);
+    for _ in 0..2 {
+        b.pass_at(&mut app, LATER);
+        a.pass_at(&mut app, LATER);
+        both(&mut a, &mut b);
+    }
+    assert_eq!(app.count("Dig the beds"), 1);
+    assert_eq!(a.titles(), b.titles());
 }

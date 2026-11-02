@@ -26,6 +26,11 @@
 //!   made, so the series continues on both sides without doubling. That
 //!   next occurrence is never added there as a new task.
 //! * Projects kept on this Mac only send nothing.
+//! * A project that starts here joins in with "Sync with Todoist"
+//!   ([`Store::mirror_link_project`]): from then on its open tasks go out
+//!   like any synced project's. When a Mac joins a project already there to
+//!   one here by name, its new tasks wait a few minutes first, so another
+//!   Mac that is sending the same ones goes first and they link instead.
 //! * Changes that just arrived from another of the person's Macs wait a few
 //!   minutes before anything that can't safely happen twice (adding a task,
 //!   finishing a repeat): the Mac where they were made sends them first.
@@ -247,10 +252,19 @@ impl Store {
         let mut key_of: HashMap<String, String> = HashMap::new();
         // Keys left alone ("Stop syncing").
         let mut stopped: HashSet<String> = HashSet::new();
+        // Projects joined by name a moment ago (lowercase): their new tasks
+        // may be on their way there from another Mac.
+        let mut just_joined: HashSet<String> = HashSet::new();
         for m in self.mirror_projects(Some(source))? {
             if m.stopped {
                 stopped.insert(m.key);
             } else {
+                if opts.device.is_some()
+                    && m.joined_ms
+                        .is_some_and(|at| opts.now_ms - at < WAIT_FOR_OTHER_MAC_MS)
+                {
+                    just_joined.insert(m.project.to_lowercase());
+                }
                 key_of.insert(m.project.to_lowercase(), m.key);
             }
         }
@@ -381,7 +395,9 @@ impl Store {
                 continue;
             }
             let Some(uid) = uid else { continue };
-            if self.just_from_another_mac(&uid, &["title", "project"], opts)? {
+            if just_joined.contains(&project.to_lowercase())
+                || self.just_from_another_mac(&uid, &["title", "project"], opts)?
+            {
                 out.waiting += 1;
                 continue;
             }

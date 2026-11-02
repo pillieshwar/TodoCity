@@ -1537,6 +1537,15 @@ const WORK_MODES = [
 const IN_WORK = { ...LIGHT, modes: WORK_MODES, mode: "work" };
 await shot("full-mode-work", FULL, full({ settings: IN_WORK }));
 await shot("full-mode-work-dark", FULL, full({ settings: { ...IN_WORK, theme: "dark" } }), async () => {}, true);
+// The mode menu in the menu-bar dropdown's header opens fully inside the window.
+await shot("popover-mode-menu", POP, scenario({ label: "popover", settings: IN_WORK }), async (p) => {
+  await p.locator(".pop-head .mode-btn").click();
+  const menu = p.locator(".pop-head .mode-menu");
+  await menu.waitFor();
+  const r = await menu.evaluate((e) => { const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, bt: b.bottom, w: innerWidth, h: innerHeight, hit: document.elementFromPoint(b.left + 20, b.top + 40)?.closest(".mode-menu") !== null }; });
+  if (r.l < 0 || r.r > r.w || r.bt > r.h) throw new Error(`the mode menu spills out of the window: ${JSON.stringify(r)}`);
+  if (!r.hit) throw new Error("something covers the mode menu");
+});
 await shot("full-mode-menu", FULL, full({ settings: IN_WORK }), async (p) => {
   await p.locator(".mode-switch.mode-side .mode-btn").click();
 });

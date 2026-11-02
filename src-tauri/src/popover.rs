@@ -1,7 +1,13 @@
 //! The menu-bar popover: a small calendar + agenda window that drops down
 //! from the TodoCity icon when it's clicked, and hides when it loses focus.
+//!
+//! It is made once at launch and spends most of its life hidden. macOS may
+//! unload a hidden window's page (after sleep, or when memory is tight),
+//! which leaves an empty pane of glass where the day should be. So each time
+//! it opens, the page is asked to answer ([`popover_alive`]); a page that
+//! doesn't answer, or answers with nothing drawn, is reloaded.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -22,6 +28,15 @@ static PINNED: AtomicBool = AtomicBool::new(false);
 /// Over a full-screen app the menu bar slides away as the popover opens,
 /// which can briefly take focus from it; don't treat that as "clicked away".
 const BLUR_GRACE: Duration = Duration::from_millis(400);
+/// How long the page has to answer when the popover opens.
+const ANSWER_WITHIN: Duration = Duration::from_millis(1200);
+/// Reload at most this often, so a page that can't draw doesn't loop.
+const RELOAD_AT_MOST_EVERY: Duration = Duration::from_secs(20);
+
+/// The latest check sent to the page, and its answer: (check, drawn).
+static CHECK: AtomicU64 = AtomicU64::new(0);
+static ANSWER: Mutex<Option<(u64, bool)>> = Mutex::new(None);
+static LAST_RELOAD: Mutex<Option<Instant>> = Mutex::new(None);
 
 fn window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window(LABEL)
@@ -58,6 +73,76 @@ fn open(app: &AppHandle, win: &WebviewWindow, icon: Rect) {
     }
     crate::spaces::present(win);
     let _ = app.emit_to(LABEL, "popover-shown", ());
+    check_page(app);
+}
+
+/// Whether the page should be reloaded, given its answer (`Some(drawn)`, or
+/// `None` when it didn't answer in time).
+pub fn needs_reload(answer: Option<bool>, reloaded_recently: bool) -> bool {
+    !reloaded_recently && answer != Some(true)
+}
+
+/// Ask the page to answer; reload it if it doesn't, or if it has nothing
+/// drawn.
+fn check_page(app: &AppHandle) {
+    let n = CHECK.fetch_add(1, Ordering::SeqCst) + 1;
+    let _ = app.emit_to(LABEL, "popover-check", n);
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(ANSWER_WITHIN).await;
+        if CHECK.load(Ordering::SeqCst) != n {
+            return; // a newer check is under way
+        }
+        let answer = ANSWER
+            .lock()
+            .ok()
+            .and_then(|a| *a)
+            .filter(|(check, _)| *check == n)
+            .map(|(_, drawn)| drawn);
+        let recent = LAST_RELOAD
+            .lock()
+            .ok()
+            .and_then(|t| *t)
+            .is_some_and(|t| t.elapsed() < RELOAD_AT_MOST_EVERY);
+        if !needs_reload(answer, recent) {
+            return;
+        }
+        let Some(win) = window(&app) else { return };
+        if !win.is_visible().unwrap_or(false) {
+            return;
+        }
+        log::warn!(
+            "menu-bar popover page {}; reloading it",
+            if answer.is_none() {
+                "didn't answer"
+            } else {
+                "had nothing drawn"
+            }
+        );
+        if let Ok(mut t) = LAST_RELOAD.lock() {
+            *t = Some(Instant::now());
+        }
+        if let Err(e) = win.reload() {
+            log::warn!("could not reload the menu-bar popover: {e}");
+        }
+    });
+}
+
+/// The popover's page answers a check: it's there, and whether it has
+/// anything drawn.
+#[tauri::command]
+pub fn popover_alive(check: u64, drawn: bool) {
+    if let Ok(mut a) = ANSWER.lock() {
+        *a = Some((check, drawn));
+    }
+}
+
+/// A window's page hit an error while drawing (or loading): into the log,
+/// so it can be found and fixed.
+#[tauri::command]
+pub fn page_error(view: String, message: String) {
+    let message: String = message.chars().take(4000).collect();
+    log::error!("page error in {view}: {message}");
 }
 
 /// Open the popover under the menu-bar icon to review a capture. Returns
@@ -110,6 +195,7 @@ pub fn show_focus(app: &AppHandle, focus: Focus) -> bool {
         }
         crate::spaces::present_passive(&win);
         let _ = app.emit_to(LABEL, "popover-shown", ());
+        check_page(app);
     }
     let _ = app.emit_to(LABEL, "popover-focus", &focus);
     true
@@ -175,4 +261,22 @@ fn place(win: &WebviewWindow, icon: Rect) -> tauri::Result<()> {
         }
     }
     win.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::needs_reload;
+
+    #[test]
+    fn a_page_that_drew_is_left_alone() {
+        assert!(!needs_reload(Some(true), false));
+    }
+
+    #[test]
+    fn a_silent_or_empty_page_is_reloaded_but_not_in_a_loop() {
+        assert!(needs_reload(None, false));
+        assert!(needs_reload(Some(false), false));
+        assert!(!needs_reload(None, true));
+        assert!(!needs_reload(Some(false), true));
+    }
 }

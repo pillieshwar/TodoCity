@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -5,6 +6,8 @@ import App from "./App";
 import { api, onSettingsChanged } from "./lib/api";
 import { applyTheme, cachedTheme } from "./lib/theme";
 import { setDoneSound } from "./lib/doneSound";
+import { pageDrawn } from "./lib/pageCheck";
+import { ViewBoundary } from "./components/ViewBoundary";
 import Popover from "./popover/Popover";
 import QuickAdd from "./quick/QuickAdd";
 import "./styles.css";
@@ -42,6 +45,25 @@ try {
   // Outside Tauri (e.g. a browser preview): follow the system.
 }
 
+// Errors outside drawing (a failed load, say) go to the app's log too.
+window.addEventListener("error", (e) => {
+  void api.pageError(view, String(e.error?.stack ?? e.message)).catch(() => undefined);
+});
+
+// The menu-bar popover answers each time it opens, so the app can reload it
+// if macOS unloaded the page while it was hidden (see popover.rs).
+if (view === "popover") {
+  try {
+    void listen<number>("popover-check", (e) => {
+      void api.popoverAlive(e.payload, pageDrawn(document.getElementById("root"))).catch(() => undefined);
+    }).catch(() => undefined);
+  } catch {
+    // Outside Tauri.
+  }
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>{view === "popover" ? <Popover /> : view === "quick" ? <QuickAdd /> : <App />}</React.StrictMode>,
+  <React.StrictMode>
+    <ViewBoundary view={view}>{view === "popover" ? <Popover /> : view === "quick" ? <QuickAdd /> : <App />}</ViewBoundary>
+  </React.StrictMode>,
 );

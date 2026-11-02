@@ -43,6 +43,11 @@ ignoreUntil = 2027-01-15
 reason = "zip 4.6.1 via tauri-plugin-updater (requires zip ^4; fix is zip 9). Windows-only, and the updater only extracts signature-verified packages. See deny.toml."
 
 [[IgnoredVulns]]
+id = "RUSTSEC-2026-0429"
+ignoreUntil = 2027-01-15
+reason = "zip 4.6.1 via tauri-plugin-updater (requires zip ^4). Windows-only, and the updater only extracts signature-verified packages, so a crafted symlink entry can't reach it. See deny.toml."
+
+[[IgnoredVulns]]
 id = "GHSA-4684-h2q9-2vcp"
 ignoreUntil = 2027-01-15
 reason = "zip 4.6.1 via tauri-plugin-updater (requires zip ^4; fix is zip 9). Windows-only, and the updater only extracts signature-verified packages. See deny.toml."

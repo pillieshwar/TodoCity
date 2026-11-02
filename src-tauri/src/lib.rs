@@ -1724,6 +1724,8 @@ pub fn run() {
             mirror::mirror_stop,
             mirror::mirror_stop_project,
             mirror::mirror_syncable,
+            popover::popover_alive,
+            popover::page_error,
             mirror::mirror_sync_project,
             mirror::mirror_set_two_way,
             set_view_mode,

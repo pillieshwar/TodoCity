@@ -1,4 +1,7 @@
 {
+  "0.4.76": [
+    "The menu-bar dropdown always opens with your day in it, even after your Mac has been asleep or busy for a while"
+  ],
   "0.4.75": [
     "Send a TodoCity project to Todoist: open its ⋯ menu and choose Sync with Todoist",
     "TodoCity makes the project in Todoist with its sections, or links to one with the same name, and its open tasks follow",

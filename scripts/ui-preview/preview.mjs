@@ -439,6 +439,8 @@ function mockTauri(s) {
       s.synced = { ...(s.synced ?? {}), [a.name]: null };
       return true;
     },
+    popover_alive: () => null,
+    page_error: () => null,
     mirror_syncable: () => {
       if (!s.mirror?.todoist?.two_way) return [];
       const names = new Set((s.tasks ?? []).flatMap((t) => (t.project ? [t.project] : [])));

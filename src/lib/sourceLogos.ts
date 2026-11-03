@@ -91,6 +91,20 @@ const NAME_FILES: [RegExp, string][] = [
   [/\bgrok\b/i, "grok"],
 ];
 
+/** Agents whose logo comes through `iconFor` rather than the tables above. */
+const AGENT_FILES = ["claude", "openai", "gemini", "cursor", "antigravity"];
+
+/** Every logo id something here can show (the logos folder's README lists them). */
+export const KNOWN_LOGOS = new Set<string>([
+  ...SITE_FILES.map(([, id]) => id),
+  ...Object.values(BUNDLE_FILES),
+  ...NAME_FILES.map(([, id]) => id),
+  ...AGENT_FILES,
+  // Meetings' accounts (`calendar::account_logo`).
+  "google_calendar",
+  "outlook",
+]);
+
 type Source = Pick<Task, "source_app" | "source_bundle"> & Partial<Pick<Task, "source_url">>;
 
 /** The logo for a site, from a page's address. */

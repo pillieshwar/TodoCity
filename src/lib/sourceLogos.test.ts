@@ -1,7 +1,6 @@
-import { readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { OFFICIAL } from "./agentIcons";
-import { fileLogo, logoFor, logoKey, siteFile } from "./sourceLogos";
+import { KNOWN_LOGOS, fileLogo, logoFor, logoKey, siteFile } from "./sourceLogos";
 
 const t = (source_app: string | null, source_bundle: string | null = null, source_url: string | null = null) => ({
   source_app,
@@ -60,9 +59,9 @@ describe("logos", () => {
     const ids = ["todoist", "things", "claude", "chrome", "safari", "slack", "outlook", "zoom", "notion", "obsidian", "linear", "github", "openai", "cursor", "gmail", "google_calendar", "gemini", "reddit", "substack", "grok", "kiro", "antigravity"];
     for (const id of ids) expect(OFFICIAL[id], id).toBeTruthy();
   });
-  it("every file in the folder is a logo TodoCity can show", () => {
-    const files = readdirSync(new URL("../assets/logos", import.meta.url)).filter((f) => /\.(svg|png)$/.test(f));
-    for (const f of files) expect(OFFICIAL[f.replace(/\.(svg|png)$/, "")], f).toBeTruthy();
+  it("every file in the folder is a logo TodoCity can show, and every one it names is there", () => {
+    for (const id of Object.keys(OFFICIAL)) expect(KNOWN_LOGOS.has(id), `${id} isn't used anywhere`).toBe(true);
+    for (const id of KNOWN_LOGOS) expect(OFFICIAL[id], `${id} is missing from src/assets/logos`).toBeTruthy();
   });
   it("light-only logos go on the dark tile", () => {
     expect(fileLogo("cursor")?.dark).toBe(true);

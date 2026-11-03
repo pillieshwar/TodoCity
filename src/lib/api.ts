@@ -174,6 +174,8 @@ export const api = {
   homeFolder: () => invoke<string>("home_folder"),
   /** Icons of the AI apps installed on this Mac, by agent or connector id (data URLs). */
   appIcons: (refresh = false) => invoke<Record<string, string>>("app_icons", { refresh }),
+  /** Icons of the Mac apps tasks came from, by bundle id (apps not on this Mac are left out). */
+  sourceIcons: (bundles: string[]) => invoke<Record<string, string>>("source_icons", { bundles }),
   inboxList: () => invoke<InboxItem[]>("inbox_list"),
   /** `schedule`: a date worked out from the item's date_text. */
   inboxAccept: (id: number, schedule?: { due_date: string | null; due_time: string | null }) =>

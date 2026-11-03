@@ -1,7 +1,10 @@
-//! The icons of AI apps installed on this Mac (Claude, Codex, Cursor…),
-//! read from each app the way Finder shows them, for the Agents settings
-//! and the agent panel. Apps that aren't installed get a lettered tile in
-//! the UI instead.
+//! The icons of apps installed on this Mac, read from each app the way
+//! Finder shows them:
+//!
+//! * AI apps (Claude, Codex, Cursor…), for the Agents settings and the agent
+//!   panel. Apps that aren't installed get a lettered tile in the UI instead.
+//! * The app a task came from (Slack, Mail, Chrome…), by its bundle id, so a
+//!   task shows where it came from at a glance ([`source_icons`]).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -154,6 +157,73 @@ pub async fn app_icons(refresh: bool) -> BTreeMap<String, String> {
     icons
 }
 
+/// Bundle ids already looked up, found or not.
+static BY_BUNDLE: Mutex<BTreeMap<String, Option<String>>> = Mutex::new(BTreeMap::new());
+
+/// A bundle id as macOS writes them (`com.tinyspeck.slackmacgap`); anything
+/// else is never looked up.
+pub fn valid_bundle(b: &str) -> bool {
+    !b.is_empty()
+        && b.len() <= 200
+        && b.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+}
+
+/// Where the app with this bundle id is installed.
+fn app_for_bundle(bundle: &str) -> Option<PathBuf> {
+    let out = apps::run(
+        Command::new("/usr/bin/mdfind").arg(format!("kMDItemCFBundleIdentifier == '{bundle}'")),
+        Duration::from_secs(3),
+    )
+    .ok()?;
+    out.lines()
+        .map(|l| PathBuf::from(l.trim()))
+        .find(|p| p.extension().is_some_and(|e| e == "app") && p.is_dir())
+}
+
+fn bundle_icon(bundle: &str, dir: &Path) -> Option<String> {
+    let app = app_for_bundle(bundle)?;
+    icon_png(&app, dir).map(|png| format!("data:image/png;base64,{}", base64(&png)))
+}
+
+/// Icons of the apps tasks came from, by bundle id. Apps not on this Mac are
+/// left out (the UI keeps its own small glyph for those).
+#[tauri::command]
+pub async fn source_icons(bundles: Vec<String>) -> BTreeMap<String, String> {
+    let wanted: Vec<String> = bundles
+        .into_iter()
+        .filter(|b| valid_bundle(b))
+        .take(64)
+        .collect();
+    if !cfg!(target_os = "macos") || wanted.is_empty() {
+        return BTreeMap::new();
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = std::env::temp_dir().join("todocity-icons");
+        let _ = std::fs::create_dir_all(&dir);
+        let mut out = BTreeMap::new();
+        for b in wanted {
+            let known = BY_BUNDLE.lock().ok().and_then(|c| c.get(&b).cloned());
+            let icon = match known {
+                Some(icon) => icon,
+                None => {
+                    let icon = bundle_icon(&b, &dir);
+                    if let Ok(mut c) = BY_BUNDLE.lock() {
+                        c.insert(b.clone(), icon.clone());
+                    }
+                    icon
+                }
+            };
+            if let Some(icon) = icon {
+                out.insert(b, icon);
+            }
+        }
+        out
+    })
+    .await
+    .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,6 +236,16 @@ mod tests {
         assert_eq!(base64(b"foo"), "Zm9v");
         assert_eq!(base64(b"foobar"), "Zm9vYmFy");
         assert_eq!(base64(&[0xff, 0xfe, 0x00]), "//4A");
+    }
+
+    #[test]
+    fn only_real_bundle_ids_are_looked_up() {
+        assert!(valid_bundle("com.tinyspeck.slackmacgap"));
+        assert!(valid_bundle("com.google.Chrome"));
+        assert!(!valid_bundle(""));
+        assert!(!valid_bundle("com.x' || true"));
+        assert!(!valid_bundle("a b"));
+        assert!(!valid_bundle(&"a".repeat(201)));
     }
 
     #[test]

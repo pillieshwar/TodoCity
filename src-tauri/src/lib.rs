@@ -1810,6 +1810,7 @@ pub fn run() {
             agent_panel::pick_folder,
             agent_panel::home_folder,
             app_icons::app_icons,
+            app_icons::source_icons,
             calsync::calsync_status,
             calsync::calsync_apple_enable,
             calsync::calsync_apple_disable,

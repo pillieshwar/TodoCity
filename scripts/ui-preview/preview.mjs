@@ -440,6 +440,8 @@ function mockTauri(s) {
       return true;
     },
     popover_alive: () => null,
+    app_icons: () => ({}),
+    source_icons: () => ({}),
     page_error: () => null,
     mirror_syncable: () => {
       if (!s.mirror?.todoist?.two_way) return [];
@@ -2466,6 +2468,35 @@ await shot("full-week-blocks", FULL, full({ settings: DARK, tasks: TIMED }), asy
   // 13:05–14:40 and 13:30–14:00 overlap: side by side.
   if (Math.abs(db.width - rb.width) > 2 || Math.abs(db.x - rb.x) < 10) throw new Error("overlapping tasks aren't side by side");
   if (!(await deep.innerText()).match(/1:05.*2:40/)) throw new Error(`no time range on the block: ${await deep.innerText()}`);
+});
+// v0.4.78: where a task came from shows as its app's logo, in lists and in Calendar.
+const SOURCED = [
+  ...FULL_TASKS,
+  task("Plan the offsite agenda", { due_date: day(1), due_time: "10:00", duration: 60, source_app: "Todoist" }),
+  task("Renew the car registration", { due_date: day(1), due_time: "15:00", duration: 30, source_app: "Things 3" }),
+  task("Review the launch notes", { due_date: day(1), due_time: "11:30", duration: 45, source_app: "Claude Code" }),
+];
+const logos = async (p, where, n) => {
+  const marks = p.locator(`${where} img.src-mark, ${where} img.src-logo`);
+  await marks.first().waitFor();
+  const loaded = await marks.evaluateAll((els) => els.filter((e) => e.complete && e.naturalWidth > 0).length);
+  if (loaded < n) throw new Error(`only ${loaded} of ${n} source logos drew in ${where}`);
+};
+await shot("full-week-source-logos", FULL, full({ settings: LIGHT, tasks: SOURCED }), async (p) => {
+  await side(/Calendar/)(p);
+  await p.locator(".wg-task", { hasText: "Plan the offsite agenda" }).scrollIntoViewIfNeeded();
+  await logos(p, ".wg-lane", 3);
+});
+await shot("popover-source-logos", POP, scenario({ label: "popover", tasks: [
+  ...TASKS,
+  task("Plan the offsite agenda", { due_date: day(0), source_app: "Todoist" }),
+  task("Renew the car registration", { due_date: day(0), source_app: "Things 3" }),
+  task("Review the launch notes", { due_date: day(0), source_app: "Claude Code" }),
+] }), async (p) => {
+  await p.getByText("Plan the offsite agenda").waitFor();
+  await logos(p, ".pop-list", 3);
+  // The logo stands in for "from Todoist"; the name is in the tooltip.
+  if (await p.locator(".pop-list .src-text:not(.sr-only)", { hasText: "from Todoist" }).count()) throw new Error("the Todoist name shows next to its logo");
 });
 // v0.4.69: short tasks with long titles stay one tidy line; a crowded hour folds into "+N".
 const SHORT = [

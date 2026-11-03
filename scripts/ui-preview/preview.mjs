@@ -1048,6 +1048,12 @@ await shot("panel-empty", PANEL, scenario({ tasks: [] }));
 await shot("panel-whats-new", PANEL, scenario({ settings: { ...SETTINGS, seen_version: "0.1.6" } }));
 await shot("popover", POP, scenario({ label: "popover" }));
 await shot("popover-dark", POP, scenario({ label: "popover" }), async () => {}, true);
+// v0.4.77: a task overdue only by its deadline (no day set) in the overdue list.
+await shot("popover-deadline-overdue", POP, scenario({ label: "popover", tasks: [...TASKS, task("Send the signed lease", { deadline: day(-3) })] }), async (p) => {
+  await p.getByText("Send the signed lease").waitFor();
+  await p.getByText(/Deadline · 3 days overdue/).waitFor();
+  if (await p.locator(".view-fallback").count()) throw new Error("the dropdown fell back to Reload");
+});
 await shot("popover-drag", POP, scenario({ label: "popover" }), async (p) => {
   const row = p.locator(".pop-row").nth(1);
   const box = await row.boundingBox();

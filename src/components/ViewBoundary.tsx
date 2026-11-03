@@ -32,7 +32,11 @@ export class ViewBoundary extends Component<{ view: string; children: ReactNode 
   }
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
-    const message = `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n${info.componentStack ?? ""}`;
+    // Safari's stack has no message line, so name it first.
+    const message =
+      error instanceof Error
+        ? `${error.name}: ${error.message}\n${error.stack ?? ""}\n${info.componentStack ?? ""}`
+        : `${String(error)}\n${info.componentStack ?? ""}`;
     void api.pageError(this.props.view, message).catch(() => undefined);
     const now = Date.now();
     if (shouldAutoReload(lastReload(), now)) {

@@ -16,7 +16,7 @@ import { DragGhost } from "../components/DragGhost";
 import { ViewSwitch } from "../components/ViewSwitch";
 import { dropPatch } from "../lib/plan";
 import { useTaskDrag } from "../lib/useTaskDrag";
-import { agendaFor, agendaHeading, dayMarks, overdueLabel, undatedCount, weekRows } from "../lib/agenda";
+import { agendaFor, agendaHeading, dayMarks, overdueTaskLabel, undatedCount, weekRows } from "../lib/agenda";
 import { api, onAgentChanges, onCalendarChanged, onCapture, onInboxChanged, onPopoverFocus, onWatchChanged, onPopoverShown, onSettingsChanged, onShortcutsChanged, onTasksChanged, onUpdateStatus } from "../lib/api";
 import { activeMode, showsTask } from "../lib/modes";
 import { ModeSwitch } from "../components/ModeSwitch";
@@ -640,7 +640,7 @@ export default function Popover() {
             <Row
               key={t.id}
               task={t}
-              chip={dueChip(t, new Date(), LOCALE) ?? { tone: "overdue", label: overdueLabel(t.due_date!, today) }}
+              chip={dueChip(t, new Date(), LOCALE) ?? { tone: "overdue", label: overdueTaskLabel(t, today) }}
               meta={rowMeta(t).join(" · ") || null}
               tone="late"
               onToggle={toggleDone}

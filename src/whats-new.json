@@ -1,4 +1,9 @@
 {
+  "0.4.78": [
+    "See where each task came from at a glance: its app's logo instead of its name, like Todoist, Things, Claude, Slack or Mail",
+    "Calendar shows the logo on each task too",
+    "Hover a logo for the app's name, or click it to open the email, message or page the task came from"
+  ],
   "0.4.77": [
     "The menu-bar dropdown opens with your day again when a task's deadline has passed",
     "Tasks overdue by their deadline say so: \"Deadline · 3 days overdue\"",

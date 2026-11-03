@@ -1,5 +1,6 @@
 import { createContext, useContext, type MouseEvent, type ReactNode } from "react";
 import { api } from "../lib/api";
+import { useSourceLogo } from "../lib/sourceLogos";
 import { canOpenSource, sourceKind, sourceLabel, sourceTooltip, type SourceKind } from "../lib/taskText";
 import type { LookSettings, Task } from "../lib/types";
 
@@ -37,25 +38,33 @@ const GLYPHS: Record<SourceKind, ReactNode> = {
  */
 export function SourceChip({ task, prefix = true, onFail }: { task: Task; prefix?: boolean; onFail?: (e: unknown) => void }) {
   const display = useSourceDisplay();
+  const logo = useSourceLogo(task);
   const label = sourceLabel(task);
   if (!label || display === "never") return null;
   const kind = sourceKind(task);
   const tip = sourceTooltip(task);
-  const cls = ["src-chip", `src-${kind}`, display === "hover" ? "hover-only" : ""].filter(Boolean).join(" ");
-  const icon = (
+  // With a logo, the logo says which app; the name moves to the tooltip. A
+  // site or file name ("github.com") still shows next to the browser's icon.
+  const logoOnly = !!logo && label === (task.source_app ?? "").trim();
+  const cls = ["src-chip", `src-${kind}`, logo ? "has-logo" : "", logoOnly ? "logo-only" : "", display === "hover" ? "hover-only" : ""]
+    .filter(Boolean)
+    .join(" ");
+  const icon = logo ? (
+    <img className="src-logo" src={logo} width={14} height={14} alt="" aria-hidden draggable={false} />
+  ) : (
     <svg className="src-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" aria-hidden>
       {GLYPHS[kind]}
     </svg>
   );
   const text = (
-    <span className="src-text">
+    <span className={logoOnly ? "src-text sr-only" : "src-text"}>
       {prefix && "from "}
       {label}
     </span>
   );
   if (!canOpenSource(task)) {
     return (
-      <span className={cls}>
+      <span className={cls} title={logoOnly ? `from ${label}` : undefined}>
         {icon}
         {text}
       </span>
@@ -66,7 +75,7 @@ export function SourceChip({ task, prefix = true, onFail }: { task: Task; prefix
       type="button"
       className={`${cls} link`}
       data-nodrag
-      title={tip ?? undefined}
+      title={tip ?? `from ${label}`}
       aria-label={tip ?? `from ${label}`}
       onClick={(e: MouseEvent) => {
         e.stopPropagation();
@@ -77,4 +86,13 @@ export function SourceChip({ task, prefix = true, onFail }: { task: Task; prefix
       {text}
     </button>
   );
+}
+
+/** Just the logo of where a task came from, for tight spots like Calendar's blocks. */
+export function SourceMark({ task, size = 12 }: { task: Task; size?: number }) {
+  const display = useSourceDisplay();
+  const logo = useSourceLogo(task);
+  const label = sourceLabel(task);
+  if (!logo || display === "never") return null;
+  return <img className="src-mark" src={logo} width={size} height={size} alt="" title={label ? `from ${label}` : undefined} draggable={false} />;
 }

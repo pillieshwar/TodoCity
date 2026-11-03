@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 
-/** Official logo files dropped into src/assets/agents (see its README), by id. */
-const OFFICIAL: Record<string, string> = Object.fromEntries(
-  Object.entries(import.meta.glob("../assets/agents/*.{svg,png}", { eager: true, query: "?url", import: "default" }) as Record<string, string>).map(
+/** Official logo files dropped into src/assets/logos (see its README), by id. */
+export const OFFICIAL: Record<string, string> = Object.fromEntries(
+  Object.entries(import.meta.glob("../assets/logos/*.{svg,png}", { eager: true, query: "?url", import: "default" }) as Record<string, string>).map(
     ([path, url]) => [path.replace(/^.*\//, "").replace(/\.(svg|png)$/, ""), url],
   ),
 );

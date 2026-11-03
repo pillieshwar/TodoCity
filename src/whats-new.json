@@ -1,4 +1,10 @@
 {
+  "0.4.79": [
+    "Calendar shows where each task and meeting came from as a small logo in its corner",
+    "Meetings show their account: Google Calendar or Outlook",
+    "More logos: Gmail, Outlook, Slack, Zoom, Notion, Obsidian, Linear, GitHub, Reddit, Substack, Chrome, Safari, Gemini, Codex, Cursor, Kiro, Grok and Antigravity",
+    "A task captured from a web page shows the site's logo, like Gmail or GitHub, instead of the browser's"
+  ],
   "0.4.78": [
     "See where each task came from at a glance: its app's logo instead of its name, like Todoist, Things, Claude, Slack or Mail",
     "Calendar shows the logo on each task too",

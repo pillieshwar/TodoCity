@@ -45,6 +45,33 @@ pub struct EventInfo {
     pub color: Option<String>,
     /// Whether it can be moved from TodoCity (`meeting_move::movable`).
     pub movable: Movable,
+    /// The logo of the account it's from (`google_calendar`, `outlook`), for
+    /// Calendar's corner badge; none for iCloud and On My Mac.
+    pub account: Option<&'static str>,
+}
+
+/// Which logo stands for a calendar account: its source's title ("Google",
+/// "name@gmail.com", "Exchange") and whether it's an Exchange account.
+pub fn account_logo(title: &str, exchange: bool) -> Option<&'static str> {
+    let t = title.to_ascii_lowercase();
+    if t.contains("google") || t.contains("gmail") {
+        return Some("google_calendar");
+    }
+    if exchange
+        || [
+            "outlook",
+            "hotmail",
+            "live.com",
+            "office365",
+            "microsoft",
+            "exchange",
+        ]
+        .iter()
+        .any(|w| t.contains(w))
+    {
+        return Some("outlook");
+    }
+    None
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -150,7 +177,7 @@ mod macos {
     use objc2_app_kit::NSColorSpace;
     use objc2_event_kit::{
         EKAuthorizationStatus, EKCalendar, EKEntityType, EKEvent, EKEventStore,
-        EKEventStoreChangedNotification, EKSpan,
+        EKEventStoreChangedNotification, EKSourceType, EKSpan,
     };
     use objc2_foundation::{NSArray, NSDate, NSError, NSNotification, NSNotificationCenter};
     use tauri::{AppHandle, Emitter};
@@ -457,6 +484,12 @@ mod macos {
                     .unwrap_or_default(),
                 color: cal.as_ref().and_then(|c| hex(c)),
                 movable: movable(facts(e)),
+                account: cal.as_ref().and_then(|c| c.source()).and_then(|src| {
+                    super::account_logo(
+                        &src.title().to_string(),
+                        src.sourceType() == EKSourceType::Exchange,
+                    )
+                }),
             }
         }
     }
@@ -586,5 +619,24 @@ mod macos {
             .and_then(|t| Local.from_local_datetime(&t).earliest())
             .map(|t| t.timestamp() as f64)
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod account_tests {
+    use super::account_logo;
+
+    #[test]
+    fn accounts_get_their_logo() {
+        assert_eq!(account_logo("Google", false), Some("google_calendar"));
+        assert_eq!(
+            account_logo("sam@gmail.com", false),
+            Some("google_calendar")
+        );
+        assert_eq!(account_logo("Exchange", false), Some("outlook"));
+        assert_eq!(account_logo("sam@company.com", true), Some("outlook"));
+        assert_eq!(account_logo("Outlook.com", false), Some("outlook"));
+        assert_eq!(account_logo("iCloud", false), None);
+        assert_eq!(account_logo("On My Mac", false), None);
     }
 }

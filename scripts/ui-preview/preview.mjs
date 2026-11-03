@@ -2508,6 +2508,12 @@ await shot("full-week-source-logos", FULL, full({ settings: LIGHT, tasks: SOURCE
   // Five tasks from other apps and two meetings from Outlook and Google Calendar.
   await badges(p, 7);
   if ((await p.locator(".wg-task", { hasText: "Fix the flaky sync test" }).locator(".src-badge.dark").count()) !== 1) throw new Error("Cursor's light logo isn't on the dark tile");
+  // The badge never squeezes the title out of its block.
+  for (const title of ["Plan the offsite agenda", "Review the launch notes"]) {
+    const t = p.locator(".wg-task", { hasText: title }).locator(".wg-t");
+    const [tb, bb] = [await t.boundingBox(), await t.locator("xpath=ancestor::div[contains(@class,'wg-block')]").boundingBox()];
+    if (!tb || tb.height < 10 || tb.y < bb.y) throw new Error(`"${title}" is squeezed in its block`);
+  }
   // A task added in TodoCity has no badge.
   if (await p.locator(".wg-task", { hasText: "Draft the" }).locator(".src-badge").count()) throw new Error("a task added in TodoCity has a badge");
 });

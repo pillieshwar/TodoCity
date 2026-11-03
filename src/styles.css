@@ -3541,6 +3541,8 @@ img.dark-tile { background: #18181b; border-radius: 4px; padding: 1.5px; box-siz
    block's top-right corner (it hangs a little over the edge). */
 .wg-block:has(> .src-badge) { overflow: visible; z-index: 2; }
 .wg-block:has(> .src-badge) .wg-title { align-self: stretch; overflow: hidden; padding-right: 14px; }
+/* The title keeps its size; what doesn't fit (the time) is cut at the bottom, as on other blocks. */
+.wg-block:has(> .src-badge) .wg-title > * { flex-shrink: 0; }
 .wg-block:has(> .src-badge) .wg-event-title { padding-right: 14px; }
 .wg-event.wg-block:has(> .src-badge) { overflow: visible; }
 .src-badge {

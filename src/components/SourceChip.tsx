@@ -1,6 +1,6 @@
 import { createContext, useContext, type MouseEvent, type ReactNode } from "react";
 import { api } from "../lib/api";
-import { useSourceLogo } from "../lib/sourceLogos";
+import { useSourceLogo, type Logo } from "../lib/sourceLogos";
 import { canOpenSource, sourceKind, sourceLabel, sourceTooltip, type SourceKind } from "../lib/taskText";
 import type { LookSettings, Task } from "../lib/types";
 
@@ -43,14 +43,15 @@ export function SourceChip({ task, prefix = true, onFail }: { task: Task; prefix
   if (!label || display === "never") return null;
   const kind = sourceKind(task);
   const tip = sourceTooltip(task);
-  // With a logo, the logo says which app; the name moves to the tooltip. A
-  // site or file name ("github.com") still shows next to the browser's icon.
-  const logoOnly = !!logo && label === (task.source_app ?? "").trim();
+  // With a logo, the logo says which app or site; the name moves to the
+  // tooltip. A site without its own logo ("example.com") still shows its
+  // name next to the browser's icon.
+  const logoOnly = !!logo && (logo.site || label === (task.source_app ?? "").trim());
   const cls = ["src-chip", `src-${kind}`, logo ? "has-logo" : "", logoOnly ? "logo-only" : "", display === "hover" ? "hover-only" : ""]
     .filter(Boolean)
     .join(" ");
   const icon = logo ? (
-    <img className="src-logo" src={logo} width={14} height={14} alt="" aria-hidden draggable={false} />
+    <img className={logo.dark ? "src-logo dark-tile" : "src-logo"} src={logo.src} width={14} height={14} alt="" aria-hidden draggable={false} />
   ) : (
     <svg className="src-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" aria-hidden>
       {GLYPHS[kind]}
@@ -88,11 +89,43 @@ export function SourceChip({ task, prefix = true, onFail }: { task: Task; prefix
   );
 }
 
-/** Just the logo of where a task came from, for tight spots like Calendar's blocks. */
+/** Just the logo of where a task came from, inline, for tight spots like Calendar's all-day row. */
 export function SourceMark({ task, size = 12 }: { task: Task; size?: number }) {
   const display = useSourceDisplay();
   const logo = useSourceLogo(task);
   const label = sourceLabel(task);
   if (!logo || display === "never") return null;
-  return <img className="src-mark" src={logo} width={size} height={size} alt="" title={label ? `from ${label}` : undefined} draggable={false} />;
+  return (
+    <img
+      className={logo.dark ? "src-mark dark-tile" : "src-mark"}
+      src={logo.src}
+      width={size}
+      height={size}
+      alt=""
+      title={label ? `from ${label}` : undefined}
+      draggable={false}
+    />
+  );
+}
+
+/**
+ * A logo on a small tile at a block's top-right corner, as Calendar shows
+ * where a task or meeting came from. `null` when there's nothing to show.
+ */
+export function LogoBadge({ logo, title }: { logo: Logo | null; title?: string }) {
+  if (!logo) return null;
+  return (
+    <span className={logo.dark ? "src-badge dark" : "src-badge"} title={title} aria-hidden>
+      <img src={logo.src} alt="" draggable={false} />
+    </span>
+  );
+}
+
+/** The corner badge for a task: where it came from, if not added in TodoCity. */
+export function SourceBadge({ task }: { task: Task }) {
+  const display = useSourceDisplay();
+  const logo = useSourceLogo(task);
+  const label = sourceLabel(task);
+  if (display === "never") return null;
+  return <LogoBadge logo={logo} title={label ? `from ${label}` : undefined} />;
 }

@@ -2475,6 +2475,14 @@ const SOURCED = [
   task("Plan the offsite agenda", { due_date: day(1), due_time: "10:00", duration: 60, source_app: "Todoist" }),
   task("Renew the car registration", { due_date: day(1), due_time: "15:00", duration: 30, source_app: "Things 3" }),
   task("Review the launch notes", { due_date: day(1), due_time: "11:30", duration: 45, source_app: "Claude Code" }),
+  // v0.4.79: a page's own site wins over the browser; light logos on a dark tile.
+  task("Reply to Dana about the venue", { due_date: day(0), due_time: "09:00", duration: 30, source_app: "Google Chrome", source_bundle: "com.google.Chrome", source_url: "https://mail.google.com/mail/u/0/#inbox/abc" }),
+  task("Fix the flaky sync test", { due_date: day(0), due_time: "16:30", duration: 60, source_app: "Cursor" }),
+];
+const SOURCED_EVENTS = [
+  ...FULL_EVENTS,
+  { id: "e8", title: "Sprint kick-off", start: `${day(0)}T11:00:00`, end: `${day(0)}T12:00:00`, all_day: false, calendar: "Calendar", color: "#0f6cbd", account: "outlook" },
+  { id: "e9", title: "Gym", start: `${day(0)}T15:00:00`, end: `${day(0)}T16:00:00`, all_day: false, calendar: "Personal", color: "#3c90ff", account: "google_calendar" },
 ];
 const logos = async (p, where, n) => {
   const marks = p.locator(`${where} img.src-mark, ${where} img.src-logo`);
@@ -2482,10 +2490,31 @@ const logos = async (p, where, n) => {
   const loaded = await marks.evaluateAll((els) => els.filter((e) => e.complete && e.naturalWidth > 0).length);
   if (loaded < n) throw new Error(`only ${loaded} of ${n} source logos drew in ${where}`);
 };
-await shot("full-week-source-logos", FULL, full({ settings: LIGHT, tasks: SOURCED }), async (p) => {
+const badges = async (p, n) => {
+  await p.locator(".wg-lane .src-badge img").first().waitFor();
+  const r = await p.locator(".wg-lane .src-badge img").evaluateAll((els) =>
+    els.map((e) => {
+      const b = e.parentElement.getBoundingClientRect();
+      const blk = e.closest(".wg-block").getBoundingClientRect();
+      return { ok: e.complete && e.naturalWidth > 0, corner: b.right > blk.right - 2 && b.top < blk.top + 2 };
+    }),
+  );
+  if (r.filter((x) => x.ok).length < n) throw new Error(`only ${r.filter((x) => x.ok).length} of ${n} badges drew`);
+  if (r.some((x) => !x.corner)) throw new Error("a badge isn't at its block's top-right corner");
+};
+await shot("full-week-source-logos", FULL, full({ settings: LIGHT, tasks: SOURCED, events: SOURCED_EVENTS }), async (p) => {
   await side(/Calendar/)(p);
   await p.locator(".wg-task", { hasText: "Plan the offsite agenda" }).scrollIntoViewIfNeeded();
-  await logos(p, ".wg-lane", 3);
+  // Five tasks from other apps and two meetings from Outlook and Google Calendar.
+  await badges(p, 7);
+  if ((await p.locator(".wg-task", { hasText: "Fix the flaky sync test" }).locator(".src-badge.dark").count()) !== 1) throw new Error("Cursor's light logo isn't on the dark tile");
+  // A task added in TodoCity has no badge.
+  if (await p.locator(".wg-task", { hasText: "Draft the" }).locator(".src-badge").count()) throw new Error("a task added in TodoCity has a badge");
+});
+await shot("full-week-source-logos-dark", FULL, full({ settings: DARK, tasks: SOURCED, events: SOURCED_EVENTS }), async (p) => {
+  await side(/Calendar/)(p);
+  await p.locator(".wg-task", { hasText: "Plan the offsite agenda" }).scrollIntoViewIfNeeded();
+  await badges(p, 7);
 });
 await shot("popover-source-logos", POP, scenario({ label: "popover", tasks: [
   ...TASKS,

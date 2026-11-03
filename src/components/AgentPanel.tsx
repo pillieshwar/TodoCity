@@ -4,14 +4,14 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { api, onTermOutput } from "../lib/api";
 import { monogram, PANEL_PROMPTS, shortFolder } from "../lib/agentRuns";
-import { iconFor, useAppIcons } from "../lib/agentIcons";
+import { iconFor, needsDarkTile, useAppIcons } from "../lib/agentIcons";
 import type { AgentCliStatus, TermSession } from "../lib/types";
 
 /** An agent's logo (its official file, or its app's icon), else a lettered tile; a prompt sign for a plain terminal. */
 export function AgentTile({ agent, size = 24 }: { agent: string | null; size?: number }) {
   const icons = useAppIcons();
   const src = iconFor(agent, icons);
-  if (src) return <img className="agent-tile agent-logo" src={src} width={size} height={size} alt="" aria-hidden />;
+  if (src) return <img className={needsDarkTile(agent) ? "agent-tile agent-logo dark-tile" : "agent-tile agent-logo"} src={src} width={size} height={size} alt="" aria-hidden />;
   const m = monogram(agent);
   return (
     <span className="agent-tile" style={{ width: size, height: size, background: m.color, fontSize: size * 0.42 }} aria-hidden>

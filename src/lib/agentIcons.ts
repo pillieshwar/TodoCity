@@ -13,14 +13,31 @@ const SAME_AS: Record<string, string> = {
   claude_code: "claude",
   claude_desktop: "claude",
   gemini_cli: "gemini",
+  codex: "openai",
 };
+
+/** Logos drawn light for dark backgrounds: always shown on a small dark tile. */
+export const DARK_TILE = new Set(["cursor", "grok", "openai"]);
+
+/** The official file used for an agent or connector id, if there is one. */
+export function officialIdFor(id: string | null): string | null {
+  if (!id) return null;
+  if (OFFICIAL[id]) return id;
+  const base = SAME_AS[id] ?? id;
+  return OFFICIAL[base] ? base : null;
+}
 
 /** The logo for an agent or connector id: an official file, else the installed app's icon. */
 export function iconFor(id: string | null, installed: Record<string, string>): string | null {
   if (!id) return null;
+  const official = officialIdFor(id);
+  if (official) return OFFICIAL[official];
   const base = SAME_AS[id] ?? id;
-  return OFFICIAL[id] ?? OFFICIAL[base] ?? installed[id] ?? installed[base] ?? null;
+  return installed[id] ?? installed[base] ?? null;
 }
+
+/** Whether an agent's logo needs the dark tile. */
+export const needsDarkTile = (id: string | null) => DARK_TILE.has(officialIdFor(id) ?? "");
 
 let cached: Record<string, string> | null = null;
 let loading: Promise<Record<string, string>> | null = null;

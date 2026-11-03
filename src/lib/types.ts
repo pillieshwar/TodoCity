@@ -465,6 +465,8 @@ export interface CalendarEvent {
   color: string | null;
   /** Mirrors `meeting_move::Movable`: moves freely, after "Move for everyone?", or stays put. */
   movable?: "yes" | "everyone" | "no";
+  /** The account's logo (`google_calendar`, `outlook`); none for iCloud and On My Mac. */
+  account?: string | null;
 }
 
 /** Mirrors `calendar::Status`. */

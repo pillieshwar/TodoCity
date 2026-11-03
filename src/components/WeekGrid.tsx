@@ -1,4 +1,5 @@
-import { SourceMark } from "./SourceChip";
+import { LogoBadge, SourceBadge, SourceMark } from "./SourceChip";
+import { fileLogo } from "../lib/sourceLogos";
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { playDone } from "../lib/doneSound";
 import { api, onCalendarChanged } from "../lib/api";
@@ -330,22 +331,17 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
           {fit === "line" ? (
             // One line: the title fades out, the time shows if there's room.
             <>
-              <span className="wg-t">
-                <SourceMark task={t} />
-                {t.title}
-              </span>
+              <span className="wg-t">{t.title}</span>
               <span className="wg-at">{timeLabel(t.due_time!, locale)}</span>
             </>
           ) : (
             <>
-              <span className="wg-t">
-                <SourceMark task={t} />
-                {t.title}
-              </span>
+              <span className="wg-t">{t.title}</span>
               <span className="wg-span">{span}</span>
             </>
           )}
         </button>
+        <SourceBadge task={t} />
         <span
           className="wg-resize"
           data-nodrag
@@ -388,6 +384,7 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
       >
         <span className="wg-event-title">{e.title || "Busy"}</span>
         {(height >= 34 || lifted) && <span className="wg-event-time">{span}</span>}
+        <LogoBadge logo={fileLogo(e.account)} title={e.account === "outlook" ? "from Outlook" : e.account === "google_calendar" ? "from Google Calendar" : undefined} />
         {movable && <span className="wg-resize" aria-hidden onPointerDown={(ev) => startEvDrag(ev, e, "stretch")} />}
       </div>
     );

@@ -3532,3 +3532,26 @@ button.tf-chip { cursor: pointer; }
 .src-chip .src-logo { flex: none; width: 14px; height: 14px; object-fit: contain; border-radius: 3px; }
 .src-chip.logo-only { padding-left: 2px; padding-right: 2px; }
 .src-mark { display: inline-block; width: 12px; height: 12px; object-fit: contain; vertical-align: -2px; margin-right: 4px; border-radius: 2px; flex: none; }
+
+/* Light-only logos (Cursor, Grok, OpenAI) sit on a small dark tile. */
+img.dark-tile { background: #18181b; border-radius: 4px; padding: 1.5px; box-sizing: border-box; }
+.agent-tile.dark-tile { padding: 12%; }
+
+/* Calendar: where a task or meeting came from, as a logo on a tile at the
+   block's top-right corner (it hangs a little over the edge). */
+.wg-block:has(> .src-badge) { overflow: visible; z-index: 2; }
+.wg-block:has(> .src-badge) .wg-title { align-self: stretch; overflow: hidden; padding-right: 14px; }
+.wg-block:has(> .src-badge) .wg-event-title { padding-right: 14px; }
+.wg-event.wg-block:has(> .src-badge) { overflow: visible; }
+.src-badge {
+  position: absolute; top: -7px; right: -7px; z-index: 3; display: grid; place-items: center;
+  width: 22px; height: 22px; box-sizing: border-box; border-radius: 7px;
+  background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 3px 10px rgba(0, 0, 0, 0.1);
+  pointer-events: none;
+}
+.src-badge img { width: 14px; height: 14px; object-fit: contain; }
+.src-badge.dark { background: #18181b; }
+.wg-block.tiny > .src-badge, .wg-block.fit-line > .src-badge { top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 6px; }
+.wg-block.tiny > .src-badge img, .wg-block.fit-line > .src-badge img { width: 12px; height: 12px; }
+:root[data-theme="dark"] .src-badge:not(.dark) { background: #f4f4f5; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .src-badge:not(.dark) { background: #f4f4f5; } }

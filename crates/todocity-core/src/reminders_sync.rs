@@ -11,9 +11,12 @@
 //!   user most recently touched outside TodoCity, e.g. on their iPhone).
 //!
 //! Deleting a reminder never deletes the TodoCity task; the task is *detached*
-//! and is never re-added to Reminders.
+//! and is never re-added to Reminders. A detached reminder that turns up in
+//! the list again wasn't deleted after all (EventKit can briefly fail to look
+//! one up, e.g. while another device syncs): it's linked back to its task,
+//! never brought in as a second one.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -138,6 +141,8 @@ pub struct PassReport {
     pub imported: usize,
     /// Tasks detached because their reminder was deleted.
     pub unlinked: usize,
+    /// Detached reminders found in the list again, linked back to their task.
+    pub relinked: usize,
     /// Reminders deleted because their task was deleted in TodoCity (on
     /// this Mac or another).
     pub deleted: usize,
@@ -160,6 +165,83 @@ fn patch_between(from: &SyncState, to: &SyncState) -> Option<TaskPatch> {
         ..Default::default()
     };
     (patch.title.is_some() || patch.due_date.is_some() || patch.done.is_some()).then_some(patch)
+}
+
+/// Merge one linked pair and save what both sides now hold.
+fn reconcile(
+    store: &Store,
+    backend: &mut impl RemindersBackend,
+    link: &ReminderLink,
+    task: &Task,
+    mut remote: SyncState,
+    report: &mut PassReport,
+) -> Result<(), StoreError> {
+    // A reminder with an empty title can't become a task title.
+    if remote.title.trim().is_empty() {
+        remote.title = link.base.title.clone();
+    }
+    let local = SyncState::of_task(task);
+    let m = merge(&link.base, &local, &remote);
+    if m.push_remote {
+        if let Err(e) = backend.update(&link.reminder_id, &m.result) {
+            report.errors.push(e);
+            return Ok(());
+        }
+        report.pushed += 1;
+    }
+    if m.update_local {
+        if let Some(patch) = patch_between(&local, &m.result) {
+            store.update(task.id, patch)?;
+            report.pulled += 1;
+        }
+    }
+    if m.result != link.base || link.detached {
+        store.save_reminder_link(&ReminderLink {
+            task_id: link.task_id,
+            reminder_id: link.reminder_id.clone(),
+            base: m.result,
+            detached: false,
+        })?;
+    }
+    Ok(())
+}
+
+/// A task an earlier pass brought in for `state` before it could link it
+/// (the pass then stopped): open, unlinked, made after `original`, with the
+/// reminder's title and day and nothing of its own.
+fn stray_copy(t: &Task, state: &SyncState, original: &Task) -> bool {
+    !t.done
+        && t.id != original.id
+        && t.created_at >= original.created_at
+        && normalize(&t.title) == normalize(&state.title)
+        && t.due_date == state.due
+        && t.source_text.is_none()
+        && t.source_app.is_none()
+        && t.notes.is_none()
+        && t.project.is_none()
+        && t.checklist.is_empty()
+}
+
+/// Save a new link. One that clashes with a link already there (the same
+/// reminder) is reported and skipped, so one item can't stop the pass.
+fn link_new(
+    store: &Store,
+    link: ReminderLink,
+    report: &mut PassReport,
+) -> Result<bool, StoreError> {
+    match store.save_reminder_link(&link) {
+        Ok(()) => Ok(true),
+        Err(StoreError::Sqlite(rusqlite::Error::SqliteFailure(e, _)))
+            if e.code == rusqlite::ErrorCode::ConstraintViolation =>
+        {
+            report.errors.push(format!(
+                "\"{}\" is already linked to a reminder",
+                link.base.title
+            ));
+            Ok(false)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// One full two-way sync pass.
@@ -187,9 +269,11 @@ pub fn run_pass(
     }
 
     // 1. Reconcile every linked pair.
+    let mut detached: HashMap<String, ReminderLink> = HashMap::new();
     for link in store.reminder_links()? {
         if link.detached {
             linked_tasks.insert(link.task_id);
+            detached.insert(link.reminder_id.clone(), link);
             continue;
         }
         let task = match store.get(link.task_id) {
@@ -200,16 +284,19 @@ pub fn run_pass(
             }
             Err(e) => return Err(e),
         };
-        let mut remote = match backend.get(&link.reminder_id) {
+        let remote = match backend.get(&link.reminder_id) {
             Ok(Some(r)) => r,
             Ok(None) => {
                 // Deleted in Reminders: keep the task, and remember not to
-                // add it back.
-                store.save_reminder_link(&ReminderLink {
+                // add it back. (If the list still has it, step 2 links it
+                // back: it couldn't be looked up just now.)
+                let gone = ReminderLink {
                     detached: true,
                     ..link.clone()
-                })?;
+                };
+                store.save_reminder_link(&gone)?;
                 linked_tasks.insert(link.task_id);
+                detached.insert(gone.reminder_id.clone(), gone);
                 report.unlinked += 1;
                 continue;
             }
@@ -220,59 +307,67 @@ pub fn run_pass(
                 continue;
             }
         };
-        // A reminder with an empty title can't become a task title.
-        if remote.title.trim().is_empty() {
-            remote.title = link.base.title.clone();
-        }
         linked_tasks.insert(link.task_id);
         linked_reminders.insert(link.reminder_id.clone());
-
-        let local = SyncState::of_task(&task);
-        let m = merge(&link.base, &local, &remote);
-        if m.push_remote {
-            if let Err(e) = backend.update(&link.reminder_id, &m.result) {
-                report.errors.push(e);
-                continue;
-            }
-            report.pushed += 1;
-        }
-        if m.update_local {
-            if let Some(patch) = patch_between(&local, &m.result) {
-                store.update(task.id, patch)?;
-                report.pulled += 1;
-            }
-        }
-        if m.result != link.base {
-            store.save_reminder_link(&ReminderLink {
-                task_id: link.task_id,
-                reminder_id: link.reminder_id,
-                base: m.result,
-                detached: false,
-            })?;
-        }
+        reconcile(store, backend, &link, &task, remote, &mut report)?;
     }
 
     // 2. New items on either side.
     let since = opts.sync_since.unwrap_or("");
-    let local_new: Vec<Task> = store
-        .list(None)?
-        .into_iter()
-        .filter(|t| !t.done && !linked_tasks.contains(&t.id) && t.created_at.as_str() >= since)
-        .collect();
-    let remote_new: Vec<(String, SyncState)> = match backend.incomplete_in_list(opts.list_id) {
-        Ok(items) => items
-            .into_iter()
-            .filter(|(id, s)| {
-                !linked_reminders.contains(id)
-                    && !trashed.contains(id)
-                    && !s.title.trim().is_empty()
-            })
-            .collect(),
+    let listed: Vec<(String, SyncState)> = match backend.incomplete_in_list(opts.list_id) {
+        Ok(items) => items,
         Err(e) => {
             report.errors.push(e);
             Vec::new()
         }
     };
+    // A detached reminder that's in the list after all: link it back to its
+    // task, and let go of any copy an earlier pass brought in for it.
+    let mut strays: HashSet<i64> = HashSet::new();
+    let all_tasks = store.list(None)?;
+    for (id, state) in &listed {
+        let Some(link) = detached.get(id) else {
+            continue;
+        };
+        let task = match store.get(link.task_id) {
+            Ok(t) => t,
+            Err(StoreError::NotFound(_)) => {
+                store.remove_reminder_link(link.task_id)?;
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
+        linked_reminders.insert(id.clone());
+        for t in &all_tasks {
+            if !linked_tasks.contains(&t.id)
+                && !strays.contains(&t.id)
+                && stray_copy(t, state, &task)
+            {
+                store.delete(t.id)?;
+                strays.insert(t.id);
+            }
+        }
+        reconcile(store, backend, link, &task, state.clone(), &mut report)?;
+        report.relinked += 1;
+    }
+    let local_new: Vec<Task> = all_tasks
+        .into_iter()
+        .filter(|t| {
+            !t.done
+                && !linked_tasks.contains(&t.id)
+                && !strays.contains(&t.id)
+                && t.created_at.as_str() >= since
+        })
+        .collect();
+    let remote_new: Vec<(String, SyncState)> = listed
+        .into_iter()
+        .filter(|(id, s)| {
+            !linked_reminders.contains(id)
+                && !detached.contains_key(id)
+                && !trashed.contains(id)
+                && !s.title.trim().is_empty()
+        })
+        .collect();
 
     // 3. Link obvious duplicates instead of copying them both ways.
     let local_states: Vec<SyncState> = local_new.iter().map(SyncState::of_task).collect();
@@ -281,12 +376,16 @@ pub fn run_pass(
     let paired_local: HashSet<usize> = pairs.iter().map(|p| p.0).collect();
     let paired_remote: HashSet<usize> = pairs.iter().map(|p| p.1).collect();
     for (li, ri) in pairs {
-        store.save_reminder_link(&ReminderLink {
-            task_id: local_new[li].id,
-            reminder_id: remote_new[ri].0.clone(),
-            base: local_states[li].clone(),
-            detached: false,
-        })?;
+        link_new(
+            store,
+            ReminderLink {
+                task_id: local_new[li].id,
+                reminder_id: remote_new[ri].0.clone(),
+                base: local_states[li].clone(),
+                detached: false,
+            },
+            &mut report,
+        )?;
     }
 
     // 4. TodoCity → Reminders.
@@ -302,13 +401,15 @@ pub fn run_pass(
         };
         match backend.create(opts.list_id, state, notes) {
             Ok(id) => {
-                store.save_reminder_link(&ReminderLink {
+                let link = ReminderLink {
                     task_id: task.id,
                     reminder_id: id,
                     base: state.clone(),
                     detached: false,
-                })?;
-                report.created += 1;
+                };
+                if link_new(store, link, &mut report)? {
+                    report.created += 1;
+                }
             }
             Err(e) => report.errors.push(e),
         }
@@ -319,18 +420,23 @@ pub fn run_pass(
         if paired_remote.contains(&i) {
             continue;
         }
+        let tx = store.conn.unchecked_transaction()?;
         let task = store.insert(NewTask {
             title: state.title.clone(),
             due_date: state.due.clone(),
             ..Default::default()
         })?;
-        store.save_reminder_link(&ReminderLink {
+        let link = ReminderLink {
             task_id: task.id,
             reminder_id: id.clone(),
             base: SyncState::of_task(&task),
             detached: false,
-        })?;
-        report.imported += 1;
+        };
+        // A task that can't be linked isn't kept: no stray copies.
+        if link_new(store, link, &mut report)? {
+            tx.commit()?;
+            report.imported += 1;
+        }
     }
 
     Ok(report)
@@ -432,6 +538,9 @@ mod tests {
         next: usize,
         fail_get: bool,
         fail_delete: bool,
+        /// Reminders `get` can't find for now, though the list still has
+        /// them (as EventKit does while another device syncs).
+        unfindable: HashSet<String>,
     }
 
     impl FakeReminders {
@@ -447,6 +556,9 @@ mod tests {
         fn get(&mut self, id: &str) -> Result<Option<SyncState>, String> {
             if self.fail_get {
                 return Err("offline".into());
+            }
+            if self.unfindable.contains(id) {
+                return Ok(None);
             }
             Ok(self.items.get(id).map(|(_, s, _)| s.clone()))
         }
@@ -714,6 +826,84 @@ mod tests {
         let r = run_pass(&store, &mut rem, &opts()).unwrap();
         assert_eq!((r.deleted, r.imported), (1, 0));
         assert!(rem.items.is_empty());
+    }
+
+    #[test]
+    fn a_reminder_that_briefly_cant_be_found_is_linked_back_not_imported() {
+        let store = Store::open_in_memory().unwrap();
+        let mut rem = FakeReminders::default();
+        let t = new_task(&store, "Renew passport", Some("2026-11-03"));
+        run_pass(&store, &mut rem, &opts()).unwrap();
+        let id = rem.items.keys().next().unwrap().clone();
+        // EventKit can't look it up for a moment, but it's still in the
+        // list: linked back in the same pass, not imported again, and the
+        // pass carries on.
+        rem.unfindable.insert(id.clone());
+        let r = run_pass(&store, &mut rem, &opts()).unwrap();
+        assert_eq!(
+            (r.unlinked, r.relinked, r.imported, r.created),
+            (1, 1, 0, 0)
+        );
+        assert!(r.errors.is_empty());
+        rem.unfindable.clear();
+        let r = run_pass(&store, &mut rem, &opts()).unwrap();
+        assert_eq!((r.relinked, r.imported, r.created), (0, 0, 0));
+        assert_eq!(store.all().unwrap().len(), 1);
+        let links = store.reminder_links().unwrap();
+        assert_eq!(links.len(), 1);
+        assert!(!links[0].detached);
+        // From then on it syncs as before.
+        rem.items.get_mut(&id).unwrap().1.title = "Renew passport at the post office".into();
+        let r = run_pass(&store, &mut rem, &opts()).unwrap();
+        assert_eq!((r.pulled, r.relinked), (1, 0));
+        assert_eq!(
+            store.get(t.id).unwrap().title,
+            "Renew passport at the post office"
+        );
+        assert_eq!(rem.items.len(), 1);
+    }
+
+    #[test]
+    fn a_stray_copy_from_an_earlier_stopped_pass_is_let_go() {
+        let store = Store::open_in_memory().unwrap();
+        let mut rem = FakeReminders::default();
+        let t = new_task(&store, "Call Maya", None);
+        let id = rem.add(LIST, s("Call Maya", None, false));
+        store
+            .save_reminder_link(&ReminderLink {
+                task_id: t.id,
+                reminder_id: id,
+                base: SyncState::of_task(&t),
+                detached: true,
+            })
+            .unwrap();
+        // What an older version left behind: a bare copy brought in for the
+        // reminder, which it then couldn't link.
+        let stray = store
+            .insert(NewTask {
+                title: "Call Maya".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        // The person's own task with the same title stays.
+        let mine = store
+            .insert(NewTask {
+                title: "Call Maya".into(),
+                notes: Some("about the offsite".into()),
+                ..Default::default()
+            })
+            .unwrap();
+        let r = run_pass(&store, &mut rem, &opts()).unwrap();
+        assert_eq!((r.relinked, r.imported), (1, 0));
+        assert!(r.errors.is_empty());
+        assert!(matches!(store.get(stray.id), Err(StoreError::NotFound(_))));
+        assert!(store.get(t.id).is_ok());
+        assert!(store.get(mine.id).is_ok());
+        // Nothing doubles on later passes.
+        run_pass(&store, &mut rem, &opts()).unwrap();
+        let r = run_pass(&store, &mut rem, &opts()).unwrap();
+        assert_eq!((r.imported, r.created), (0, 0));
+        assert_eq!(store.all().unwrap().len(), 2);
     }
 
     #[test]

@@ -47,7 +47,7 @@ try {
 
 // Errors outside drawing (a failed load, say) go to the app's log too.
 window.addEventListener("error", (e) => {
-  void api.pageError(view, String(e.error?.stack ?? e.message)).catch(() => undefined);
+  void api.pageError(view, `${e.message}\n${e.error?.stack ?? ""}`).catch(() => undefined);
 });
 
 // The menu-bar popover answers each time it opens, so the app can reload it

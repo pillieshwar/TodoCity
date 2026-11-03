@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agendaFor, agendaHeading, dayMarks, overdueLabel, undatedCount, weekRows } from "./agenda";
+import { agendaFor, agendaHeading, dayMarks, overdueLabel, overdueTaskLabel, undatedCount, weekRows } from "./agenda";
 import type { Task } from "./types";
 
 const TODAY = "2026-10-14"; // Wednesday
@@ -103,5 +103,16 @@ describe("labels", () => {
   it("overdue labels", () => {
     expect(overdueLabel("2026-10-13", TODAY)).toBe("Yesterday");
     expect(overdueLabel("2026-10-11", TODAY)).toBe("3 days overdue");
+  });
+
+  it("labels every task the overdue list holds, including ones overdue by their deadline", () => {
+    const noDay = task("Send the lease", null, { deadline: "2026-10-11" });
+    const later = task("Pay rent", "2026-10-20", { deadline: "2026-10-13" });
+    const late = task("Call Sam", "2026-10-11");
+    const { overdue } = agendaFor([noDay, later, late], TODAY, TODAY);
+    expect(overdue.map((t) => t.title).sort()).toEqual(["Call Sam", "Pay rent", "Send the lease"]);
+    expect(overdueTaskLabel(noDay, TODAY)).toBe("Deadline · 3 days overdue");
+    expect(overdueTaskLabel(later, TODAY)).toBe("Deadline · yesterday");
+    expect(overdueTaskLabel(late, TODAY)).toBe("3 days overdue");
   });
 });

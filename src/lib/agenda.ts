@@ -91,3 +91,14 @@ export function overdueLabel(due: string, today: string): string {
   if (days <= 1) return "Yesterday";
   return `${days} days overdue`;
 }
+
+/**
+ * The label for a task in the overdue list. A task can be there because its
+ * deadline passed, with no day set (or a later one), so it counts from the
+ * same day the list does.
+ */
+export function overdueTaskLabel(t: Task, today: string): string {
+  const day = effectiveDay(t, today) ?? today;
+  const label = overdueLabel(day, today);
+  return day === t.deadline && day !== t.due_date ? `Deadline · ${label.toLowerCase()}` : label;
+}

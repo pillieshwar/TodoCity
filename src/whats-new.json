@@ -1,7 +1,8 @@
 {
   "0.4.77": [
     "The menu-bar dropdown opens with your day again when a task's deadline has passed",
-    "Tasks overdue by their deadline say so: \"Deadline · 3 days overdue\""
+    "Tasks overdue by their deadline say so: \"Deadline · 3 days overdue\"",
+    "Apple Reminders keeps syncing when a reminder briefly can't be found: it links back to its task instead of being added twice"
   ],
   "0.4.76": [
     "The menu-bar dropdown always opens with your day in it, even after your Mac has been asleep or busy for a while"

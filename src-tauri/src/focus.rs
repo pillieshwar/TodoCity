@@ -407,14 +407,13 @@ fn end_now(app: &AppHandle) {
 
 // ── Commands ───────────────────────────────────────────────────────────────
 
-fn blocking<T: Send + 'static>(
+/// Run `f` off the main thread (it may wait on Calendar or Shortcuts).
+async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, String> + Send + 'static,
-) -> impl std::future::Future<Output = Result<T, String>> {
-    async move {
-        tauri::async_runtime::spawn_blocking(f)
-            .await
-            .map_err(|e| e.to_string())?
-    }
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

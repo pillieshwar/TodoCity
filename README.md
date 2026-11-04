@@ -167,6 +167,10 @@ Finished tasks go to the **Logbook**. A task added with no date and no project g
 
 The sidebar's switch at the top picks a **mode**. In **Work**, Today, Calendar, Anytime, the menu bar and notifications show only your work projects (and tasks with no project); everything else waits, a click away ("4 more today outside Work · Show"). **Personal** starts with every project. Make more in **Settings → Modes**: tick the projects each one shows, which calendars it shows, whether notifications follow it, and which project new tasks go to. Each Mac remembers its own mode — Work on the work laptop, Personal at home — while the tasks stay the same everywhere. Switch with ⌃⌥1, ⌃⌥2…, or ⌃⌥0 for everything.
 
+### Focus Blocks
+
+Put a **focus block** on your calendar and your Mac's Focus turns on when it starts and off when it ends. Make one in Calendar by typing "Focus" in an hour (or "Focus: draft the brief for 90 min"), with **Focus now** on Today, or as an event on your Focus calendar in Apple Calendar. Move, stretch or delete a block in either place and Focus follows. While a block runs, TodoCity shows only the tasks you picked for it, with **+15 min** and **End now**; afterwards a short wrap-up shows what you finished and moves the rest to tomorrow in one tap. macOS lets apps change Focus only through Shortcuts, so **Settings → Focus Blocks** walks you through adding the "TodoCity Focus" shortcut once; macOS then ends Focus on time by itself, even if your Mac was asleep.
+
 ### Reminders and check-ins
 
 <img src="docs/screenshots/check-in.png" alt="The menu-bar dropdown opened on a task that just came due" width="340" align="right">
@@ -346,6 +350,7 @@ gh attestation verify ~/Downloads/TodoCity-macOS.dmg --repo pillieshwar/TodoCity
 - **Sync between your Macs** is end-to-end encrypted. Changes pass through a relay as sealed boxes it can't open; the key exists only on your Macs, in the Keychain. The relay keeps no logs, deletes each box once every Mac has it (30 days at most), and has no accounts. See [Sync between your Macs](#sync-between-your-macs).
 - **Todoist** (**Settings → Connectors**). With keep-in-sync on, TodoCity reads your Todoist with your token and, with two-way sync, sends changes to synced tasks back to Todoist's servers. Projects you choose to sync with Todoist are sent there. New tasks in your TodoCity Inbox, in projects that don't sync with Todoist and in "Keep on this Mac only" projects stay on your Mac.
 - **Apple Reminders and Calendar** sync through iCloud if you pick an iCloud list or account. Pick "On My Mac" to keep them local. "Keep on this Mac only" projects never go to Calendar.
+- **Focus Blocks** are events on the calendar you choose: On My Mac keeps them local; an account calendar (Google, Exchange, iCloud) syncs their title and time there. The tasks you pick for a block stay on this Mac.
 - **Model downloads** you start come from Hugging Face and are checked against their SHA-256. **Update checks** go to GitHub (turn them off in **Settings → General**).
 
 ## How it works

@@ -16,6 +16,7 @@ mod capture;
 mod data;
 mod double_copy;
 mod engine;
+mod focus;
 mod greet;
 mod import;
 mod login_item;
@@ -665,15 +666,25 @@ async fn calendar_events(
     if let Some(m) = todocity_core::modes::active(&s.modes, s.mode.as_deref()) {
         hidden.extend(m.hidden_calendars.iter().cloned());
     }
-    tauri::async_runtime::spawn_blocking(move || calendar::events(&from, &to, &hidden))
-        .await
-        .map_err(err)?
+    let focus = s.focus.calendar.clone().filter(|_| s.focus.enabled);
+    let mut events =
+        tauri::async_runtime::spawn_blocking(move || calendar::events(&from, &to, &hidden))
+            .await
+            .map_err(err)??;
+    // Focus blocks look different in Calendar.
+    if let Some(key) = focus {
+        for e in &mut events {
+            e.focus = e.calendar_key == key;
+        }
+    }
+    Ok(events)
 }
 
 /// Move a meeting in Calendar (dragged in TodoCity's Calendar). Only events
 /// `meeting_move::movable` allows; meetings with guests need `everyone`.
 #[tauri::command]
 async fn calendar_move_event(
+    app: AppHandle,
     settings: State<'_, Settings>,
     id: String,
     at: String,
@@ -684,11 +695,18 @@ async fn calendar_move_event(
     if !settings.get().calendar_enabled {
         return Err("Turn on Calendar in Settings → Connectors first.".into());
     }
-    tauri::async_runtime::spawn_blocking(move || {
-        calendar::move_event(&id, &at, &start, &end, everyone)
+    let focus = settings.get().focus.calendar;
+    let moved = tauri::async_runtime::spawn_blocking({
+        let (id, at) = (id.clone(), at.clone());
+        move || calendar::move_event(&id, &at, &start, &end, everyone)
     })
     .await
-    .map_err(err)?
+    .map_err(err)??;
+    // A focus block's tasks move with it.
+    if focus.as_deref() == Some(moved.calendar_key.as_str()) {
+        focus::moved(&app, &id, &at, &moved.start);
+    }
+    Ok(moved)
 }
 
 /// System Settings → Privacy & Security → Calendars.
@@ -1592,6 +1610,7 @@ pub fn run() {
             app.manage(reminders::Reminders::start(app.handle(), &data_dir));
             app.manage(sync::SyncService::new(&data_dir));
             app.manage(calsync::CalendarSync::start(app.handle(), &data_dir));
+            app.manage(focus::FocusService::new(&data_dir));
             mirror::Mirror::start(app.handle());
 
             // Every 30 s: release the model's memory when idle, and roll the
@@ -1673,6 +1692,15 @@ pub fn run() {
             greet::start(app.handle());
             // Keep one warm connection to the Mac's calendars (see calendar.rs).
             calendar::start(app.handle());
+            // Focus blocks: look again whenever the calendar changes.
+            focus::start(app.handle());
+            {
+                use tauri::Listener;
+                let handle = app.handle().clone();
+                app.listen_any("calendar-changed", move |_| {
+                    handle.state::<focus::FocusService>().nudge();
+                });
+            }
 
             // todocity:// links: while running, and the one TodoCity was opened with.
             {
@@ -1834,6 +1862,19 @@ pub fn run() {
             calendar_events,
             calendar_move_event,
             calendar_open_privacy_settings,
+            focus::focus_status,
+            focus::focus_set,
+            focus::focus_make_calendar,
+            focus::focus_try,
+            focus::focus_resume,
+            focus::focus_end_now,
+            focus::focus_extend,
+            focus::focus_add_block,
+            focus::focus_delete_block,
+            focus::focus_block_tasks,
+            focus::focus_set_block_tasks,
+            focus::focus_open_shortcuts,
+            focus::focus_open_system_settings,
             open_source,
             open_url,
             restore_task,

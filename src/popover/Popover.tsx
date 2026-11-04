@@ -33,6 +33,7 @@ import { safeLocale } from "../lib/locale";
 import { Toasts, useToasts } from "../components/Toasts";
 import { SourceChip, SourceDisplay, useSourceDisplay } from "../components/SourceChip";
 import { DueNowCard } from "../components/DueNowCard";
+import { FocusNow } from "../components/FocusNow";
 import { dueChip, dueNow, type DueChip } from "../lib/due";
 import { FocusCard, type Focus } from "./FocusCard";
 import { atProject } from "../components/AddTaskForm";
@@ -605,6 +606,8 @@ export default function Popover() {
         )}
 
         {mode === "list" && events.length > 0 && <EventList events={events} day={selected} now={now} />}
+
+        {selected === today && <FocusNow tasks={tasks} actions={actions} locale={LOCALE} compact />}
 
         {selected === today && mode === "list" && (
           <DueNowCard tasks={dueNow(tasks, new Date())} actions={actions} now={new Date()} locale={LOCALE} compact />

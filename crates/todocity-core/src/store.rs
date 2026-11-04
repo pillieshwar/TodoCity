@@ -437,6 +437,16 @@ ALTER TABLE agent_runs ADD COLUMN tail TEXT;
     r#"
 ALTER TABLE mirror_projects ADD COLUMN joined_ms INTEGER;
 "#,
+    // The tasks picked for each focus block (see `crate::focus`), by block
+    // occurrence (`focus::key`). Local to this Mac, like agent marks.
+    r#"
+CREATE TABLE focus_tasks (
+    block    TEXT    NOT NULL,
+    task_id  INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (block, task_id)
+);
+"#,
 ];
 
 /// One task to bring in from another app, with its history.

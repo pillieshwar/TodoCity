@@ -81,6 +81,7 @@ import { BatchBar } from "./components/BatchBar";
 import { taskActions } from "./lib/taskActions";
 import { dueNow } from "./lib/due";
 import { DueNowCard } from "./components/DueNowCard";
+import { FocusNow } from "./components/FocusNow";
 import { AddTaskForm } from "./components/AddTaskForm";
 import { relativeLabel } from "./lib/dates";
 import { timeLabel } from "./lib/schedule";
@@ -1612,6 +1613,7 @@ export default function App() {
       // Every list: the month at a glance, and the picked day's hours below
       // it — in a project or on a floor, only that project's or floor's tasks.
       <aside className="side-pane plan-pane month-pane" aria-label="Calendar">
+        <FocusNow tasks={tasks} actions={actions} locale={LOCALE} idle onError={setError} />
         <MonthCalendar
           tasks={sideTasks}
           today={today}
@@ -2206,6 +2208,11 @@ export default function App() {
 
       {banners}
       {tourEl}
+
+      {/* A focus block that's running (or just ended) shows on every list; "Focus now" on Today. */}
+      {tasksShown && !capture && (
+        <FocusNow tasks={tasks} actions={actions} locale={LOCALE} compact idle={list === "today"} onError={setError} />
+      )}
 
       {/* Due-now reminders show where they belong — Today and Overdue — not on every list. */}
       {tasksShown && !capture && (list === "today" || list === "overdue") && (

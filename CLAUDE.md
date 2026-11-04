@@ -1,14 +1,15 @@
 # TodoCity: notes for AI coding agents
 
-TodoCity is a private, Mac-first to-do app. Select or copy text in any app, press ⌘C twice, and an on-device model writes the task. Each project is a building in a 3D city, and finishing tasks moves residents in. The stack is Tauri v2, Rust and React/TypeScript. User-facing docs are in `README.md`; the website lives in a separate repo, `pillieshwar/todo-city-website`.
+TodoCity is a private, Mac-first to-do app, free and open source under the MIT License (the name and icon aren't: `TRADEMARK.md`). Select or copy text in any app, press ⌘C twice, and an on-device model writes the task. Each project is a building in a 3D city, and finishing tasks moves residents in. It syncs between the person's Macs, both ways with Todoist, into it from Things 3, with Apple Reminders and Apple Calendar, and AI agents can add tasks over MCP. The stack is Tauri v2, Rust and React/TypeScript. User-facing docs are in `README.md`; the website (todocity.app, with guides and the privacy FAQ) lives in a separate repo, `pillieshwar/todo-city-website`.
 
 ## Layout
 
 | Path | What |
 |---|---|
 | `crates/todocity-core/src/` | Pure Rust core with unit tests: `store.rs` (SQLite schema, migrations, tasks, repeats), `sync/` (Mac-to-Mac sync), `mirror.rs` (Things/Todoist keep-in-sync: bringing changes in), `mirror_out.rs` (two-way: sending changes back), `things.rs`, `todoist.rs`, `todoist_push.rs` (Todoist writes), `reminders_sync.rs`, `llm.rs`/`prompt.rs`/`extraction.rs` (model calls) |
-| `src-tauri/src/` | Tauri shell: commands in `lib.rs`, `capture/`, `engine.rs` (bundled llama-server), `sync.rs`, `mirror.rs`, `reminders/`, `calendar.rs`, `agents/` (MCP), `watch.rs`, `settings.rs` |
-| `src/` | React UI: `App.tsx`, `components/`, `lib/` (`api.ts` = every Tauri invoke, `types.ts`, `dates.ts`/`schedule.ts` = date parsing), `popover/` (menu bar), `quick/` (Quick Add) |
+| `src-tauri/src/` | Tauri shell: commands in `lib.rs`, `capture/`, `engine.rs` (bundled llama-server), `sync.rs`, `mirror.rs` (Things/Todoist passes, "Sync with Todoist"), `reminders/`, `calendar.rs` (meetings, `account_logo`), `calsync.rs`, `agents/` (MCP), `watch.rs`, `settings.rs`, `popover.rs` (menu-bar dropdown), `tray.rs` (menu-bar icon), `app_icons.rs` (installed apps' icons) |
+| `src/` | React UI: `App.tsx`, `components/`, `lib/` (`api.ts` = every Tauri invoke, `types.ts`, `dates.ts`/`schedule.ts` = date parsing, `sourceLogos.ts` = where a task came from), `popover/` (menu bar), `quick/` (Quick Add), `main.tsx` (picks the view by window label, wraps it in `ViewBoundary`) |
+| `src/assets/logos/` | Every app, site and agent logo, by id, with a README listing them |
 | `src/whats-new.json` | Release notes, newest first. Shown in the app and copied into GitHub release notes |
 | `scripts/ui-preview/preview.mjs` | Playwright screenshot tests against a faked Tauri backend (`scenario()`, `full()`, `shot()`) |
 | `relay/` | Cloudflare Worker sync relay |
@@ -26,6 +27,8 @@ npm run tauri dev          # run the app (macOS; needs scripts/build-llama-serve
 
 UI preview: build, serve `dist/` on port 4173, then run `ONLY='name-regex' node scripts/ui-preview/preview.mjs http://localhost:4173 ./shots`.
 
+Debugging a report: the app logs to `~/Library/Logs/TodoCity/todocity.log` (Settings → Help → Log file; started fresh past 2 MB), the bundled model to `~/Library/Logs/app.pluck.desktop/llama-server.log`. Errors while drawing a window show as `page error in <view>: Name: message` plus a stack of minified names. To map them, get the same build: `npm run build` on the release's commit gives the same `dist/assets/index-<hash>.js` (the hash in the log), or take it from the `ui-previews` branch (`app/assets/`), which holds the latest UI preview run's build.
+
 ## Shipping a change
 
 1. Branch from an up-to-date `main`. Name it `v0.4.NN-short-name`.
@@ -40,22 +43,33 @@ UI preview: build, serve `dist/` on port 4173, then run `ONLY='name-regex' node 
    - `package-lock.json` (two places: top level and `packages[""]`)
    - `Cargo.lock` (the `todocity` and `todocity-core` entries)
 4. Add a top entry to `src/whats-new.json`: a few short lines written for users, not developers.
-5. Open a PR. Wait for CI (`ci.yml`, `security.yml`, CodeQL, `ui-preview.yml`) to pass, then squash-merge.
-6. Release by running the `release.yml` workflow on `main` with `publish=true`. It builds the signed, notarized .dmg and the updater files.
+5. Open a PR. Wait for every check to pass, then squash-merge:
+   - **CI** (`ci.yml`): Rust core tests, Frontend (typecheck, Vitest, build), Desktop app (macOS build), Fuzz.
+   - **Security** (`security.yml`): cargo-deny, OSV-Scanner, npm audit, zizmor, model catalog links. A new advisory can fail it on any branch overnight; if it can't reach TodoCity, accept it (see Rules).
+   - **CodeQL**.
+   - **UI preview** (`ui-preview.yml`, check name `shots`): runs only on pushes to `v0.*` branches that touch `src/`, `scripts/ui-preview/` or the workflow, and force-pushes the screenshots to the `ui-previews` branch (a failed shot leaves a `-FAILED.png`). Look at the new shots, not just the result. `full-side-resized` and `full-city-celebrate` are timing-sensitive: re-run the failed job once before digging in.
+6. Release by running the `release.yml` workflow on `main` with `publish=true`. It builds the signed, notarized .dmg and the updater files, creates the `v0.4.NN` tag and publishes the GitHub release.
+   - Apple's notary service sometimes times out (`NSURLErrorDomain … The request timed out`): re-run the failed job.
+   - The **Protect release tags** ruleset blocks updating or deleting `v*` tags (admins bypass) but allows creating them, so the workflow can tag. Don't turn creation back on in it. (`cleanup-releases.yml` can't delete tags because of it; an admin deletes old ones by hand.)
+   - Done when `releases/latest` is the new tag and its `latest.json` says the new version; the app picks that up as "Update ready".
+7. If the change alters what the website says (a feature in a guide, a privacy line in the FAQ: `src/site.ts`, `src/pages/content.ts`), open a PR in `todo-city-website` and merge it after the release.
 
 Docs-only changes (like this file) don't need a version bump or a release.
 
 ## Rules
 
+- **The name is TodoCity**, one word, everywhere (never "Todo City").
 - **Wording:** nothing in the app, Settings, README or website may sound negative, alarming or doubtful about TodoCity.
   - Say what to do: "Select some text first", not "No selected text found"; "Add AI model", not "No model yet".
   - Real errors on genuine failures are fine if they're specific and say how to fix the problem.
-- **Privacy claims must stay true.** TodoCity is private by default: nothing leaves the Mac unless the user turns it on. A feature that would break a claim ("agents can never read your tasks", "no analytics") must update that claim in the same release, in the app, `README.md` and the website.
+- **Privacy claims must stay true.** TodoCity is private by default: nothing leaves the Mac unless the user turns it on, and sending goes as far as they chose (one project at a time for "Sync with Todoist", never the Inbox or "Keep on this Mac only" projects). A feature that would break a claim ("agents can never read your tasks", "no analytics") must update that claim in the same release, in the app, `README.md` and the website.
 - **The data folder is** `~/Library/Application Support/TodoCity/` (since 0.4.61). `data_folder::settle` moves the old `app.pluck.desktop` folder there once at launch and leaves a link at the old name. **Never change the bundle identifier** `app.pluck.desktop`: macOS permissions, Keychain items and login items are tied to it.
-- **Synced tasks stay editable.** Keep-in-sync is two-way by default (Todoist now; Things and a TODO.md bridge next): changes here go back to the other app. People can switch a connector to one-way in its card, and synced tasks are never read-only either way.
-- **Sync must never lose or resurrect tasks.** For any change touching `sync/`, `mirror.rs`, `reminders_sync.rs` or how tasks are deleted or repeated, think through two Macs, offline edits, and deletes on both sides, and add tests (`sync/engine.rs` has a `send(a, b)` helper).
+- **Synced tasks stay editable.** Keep-in-sync is two-way by default (Todoist now; Things comes in only, until its two-way and a TODO.md bridge land): changes here go back to the other app. People can switch a connector to one-way in its card, and synced tasks are never read-only either way.
+- **Sync must never lose or resurrect tasks.** For any change touching `sync/`, `mirror.rs`, `mirror_out.rs`, `reminders_sync.rs` or how tasks are deleted or repeated, think through two Macs, offline edits, and deletes on both sides, and add tests. Helpers: `sync/engine.rs` has `send(a, b)`; `mirror_out/tests.rs` has a pretend Todoist (`App`, with `sync_project`) and `Mac`s joined by real Mac-to-Mac sync (`two_macs`, `both`, `LATER`); `reminders_sync.rs` has `FakeReminders` (with `unfindable` for EventKit's brief misses).
+- **One item never stops a sync pass.** Report it in the pass's `errors` and carry on; save links so a clash is skipped, not returned with `?` (see `link_new`), and roll back half-made imports.
 - **No real personal data** in code, tests, fixtures, screenshots or docs. Use made-up names (Sam, Maya, Priya, Dana).
-- **Accepted security advisories** go in both `osv-scanner.toml` and `deny.toml`, each with a reason and a date to look again.
+- **Accepted security advisories** go in both `osv-scanner.toml` and `deny.toml`, each with a reason and a date to look again (`zip` 4 via the Windows-only updater has several).
+- **Tests run without Node types:** `tsc` and Vitest see browser types only, so don't import `node:*` in `src/**/*.test.ts`; read bundled files through `import.meta.glob`.
 
 ## Design notes
 

@@ -1,4 +1,5 @@
 import { latestBatch, type BatchNote } from "../lib/agents";
+import { useFlip } from "../lib/useMotion";
 import { AgentIcon } from "../components/WhoSwitch";
 import {
   useCallback,
@@ -240,6 +241,9 @@ export default function Popover() {
 
   const marks = useMemo(() => dayMarks(tasks, today), [tasks, today]);
   const agenda = useMemo(() => agendaFor(tasks, selected, today), [tasks, selected, today]);
+  // Rows glide when one is finished or moved; a new capture arrives softly.
+  const listRef = useRef<HTMLUListElement>(null);
+  useFlip(listRef, { greet: true, paused: !!drag });
   const undated = useMemo(() => undatedCount(tasks), [tasks]);
   const projectNames = useMemo(() => [...new Set(tasks.flatMap((t) => (t.project ? [t.project] : [])))], [tasks]);
   const heading = agendaHeading(selected, today, LOCALE);
@@ -638,7 +642,7 @@ export default function Popover() {
         {error && <p className="pop-error">{error}</p>}
 
         {mode === "list" && (
-        <ul className="pop-list">
+        <ul className="pop-list" ref={listRef} key={selected}>
           {agenda.overdue.map((t) => (
             <Row
               key={t.id}
@@ -791,6 +795,7 @@ function Row({
   const hasSource = useSourceDisplay() !== "never" && !!sourceLabel(task);
   return (
     <li
+      data-flip={task.id}
       className={`pop-row ${tone}${task.done ? " checked" : ""}${dragging ? " lifted" : ""}`}
       onPointerDown={onPointerDown ? (e) => onPointerDown(e, task) : undefined}
     >

@@ -1,5 +1,5 @@
 import { useWords } from "../lib/words";
-import { Fragment, useEffect, useState, type ReactElement } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactElement, type RefObject } from "react";
 import { projectList, projectOf, type ListId } from "../lib/lists";
 import type { ProjectSummary } from "../lib/types";
 import { Pie } from "./ListPicker";
@@ -8,8 +8,60 @@ import { bySection } from "../lib/lists";
 import { PROJECT_COLORS } from "../lib/colors";
 import { MayorAvatar } from "./MayorAvatar";
 import { LineIcon, type IconName } from "./LineIcon";
+import { Collapse, Tick } from "./Motion";
+import { reducedMotion } from "../lib/motion";
+import { useScrollEdges } from "../lib/useMotion";
 
 const COLLAPSED_KEY = "todocity.projectsFolded";
+/** Projects opened to show their sections, remembered on this Mac. */
+const OPEN_KEY = "todocity.projectsOpen";
+function savedOpen(): Set<string> {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(OPEN_KEY) ?? "[]");
+    return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * The selection's highlight, one per scroll area, glides from row to row
+ * instead of jumping. Rows move under it (a section opening above, a
+ * scroll), so it follows them, without gliding, as they do.
+ */
+function useGlide(box: RefObject<HTMLElement | null>, glide: RefObject<HTMLSpanElement | null>, key: string) {
+  const last = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    const g = glide.current;
+    if (!el || !g) return;
+    const place = (animate: boolean) => {
+      const on = el.querySelector<HTMLElement>(".sb-item.on, .sb-floor.on");
+      if (!on || on.closest(".collapse:not(.open)")) {
+        g.classList.remove("on", "moving");
+        last.current = null;
+        return;
+      }
+      const b = el.getBoundingClientRect();
+      const r = on.getBoundingClientRect();
+      const spot = `${r.left - b.left + el.scrollLeft},${r.top - b.top + el.scrollTop},${r.width},${r.height}`;
+      if (spot === last.current) return;
+      const [x, y, w, h] = spot.split(",").map(Number);
+      g.classList.toggle("moving", animate && last.current !== null && !reducedMotion());
+      g.style.transform = `translate(${x}px, ${y}px)`;
+      g.style.width = `${w}px`;
+      g.style.height = `${h}px`;
+      g.classList.add("on");
+      last.current = spot;
+    };
+    place(true);
+    if (typeof ResizeObserver !== "function") return;
+    const ro = new ResizeObserver(() => place(false));
+    ro.observe(el);
+    for (const c of Array.from(el.children)) ro.observe(c);
+    return () => ro.disconnect();
+  }, [box, glide, key]);
+}
 function savedFolded(): boolean {
   try {
     return localStorage.getItem(COLLAPSED_KEY) === "1";
@@ -84,7 +136,14 @@ export function Sidebar(p: Props) {
   const w = useWords();
   const project = projectOf(p.list);
   // Buildings opened to show their floors; the one being viewed opens itself.
-  const [openB, setOpenB] = useState<Set<string>>(() => new Set());
+  const [openB, setOpenB] = useState<Set<string>>(savedOpen);
+  useEffect(() => {
+    try {
+      localStorage.setItem(OPEN_KEY, JSON.stringify([...openB]));
+    } catch {
+      // Not remembered; fine.
+    }
+  }, [openB]);
   // In a mode: projects it hides are listed apart, folded away.
   const [showOthers, setShowOthers] = useState(false);
   const shownB = p.inMode ? p.buildings.filter((b) => p.inMode!(b.project!)) : p.buildings;
@@ -175,6 +234,14 @@ export function Sidebar(p: Props) {
       onBlur={done}
     />
   );
+  const navRef = useRef<HTMLElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const navGlide = useRef<HTMLSpanElement>(null);
+  const scrollGlide = useRef<HTMLSpanElement>(null);
+  const glideKey = [p.list, p.floorOn?.project ?? "", p.floorOn?.floor ?? "", p.inSettings ? "s" : "", folded ? "f" : "", [...openB].join("|")].join("·");
+  useGlide(navRef, navGlide, glideKey);
+  useGlide(scrollRef, scrollGlide, glideKey);
+  useScrollEdges(scrollRef, `${folded}${p.buildings.length}`);
   const item = (id: ListId, text: string, icon: IconName, count?: number, late?: boolean) => {
     const on = !p.inSettings && p.list === id;
     return (
@@ -189,12 +256,12 @@ export function Sidebar(p: Props) {
           <LineIcon name={icon} size={18} />
         </span>
         <span className="sb-text">{text}</span>
-        <span className={late ? "sb-count late" : "sb-count"}>{count ? count : ""}</span>
+        <Tick className={late ? "sb-count late" : "sb-count"} value={count} />
       </button>
     );
   };
   return (
-    <aside className={p.dragging ? "sidebar dragging" : "sidebar"} aria-label="Lists">
+    <aside className={p.dragging ? "sidebar glides dragging" : "sidebar glides"} aria-label="Lists">
       <div className="sb-top" data-tauri-drag-region>
         {p.lights}
         <span className="sb-brand" data-tauri-drag-region>
@@ -207,7 +274,8 @@ export function Sidebar(p: Props) {
         <span>Search</span>
         <kbd>⌘K</kbd>
       </button>
-      <nav className="sb-nav" aria-label="Lists">
+      <nav className="sb-nav" aria-label="Lists" ref={navRef}>
+        <span className="sb-glide" ref={navGlide} aria-hidden />
         {item("today", "Today", "today", p.counts.today)}
         {item("upcoming", "Calendar", "calendar")}
         {item("inbox", "Inbox", "inbox", p.counts.inbox)}
@@ -216,7 +284,8 @@ export function Sidebar(p: Props) {
         {(p.counts.agents || p.list === "agents") && item("agents", "With agents", "delegate", p.counts.agentsWaiting || p.counts.agents, !!p.counts.agentsWaiting)}
       </nav>
 
-      <div className="sb-scroll">
+      <div className="sb-scroll" ref={scrollRef}>
+        <span className="sb-glide" ref={scrollGlide} aria-hidden />
         <h2 className="sb-head sb-head-row">
           <button
             type="button"
@@ -244,7 +313,7 @@ export function Sidebar(p: Props) {
           </span>
         </h2>
         {adding?.kind === "building" && field(`New ${w.project.toLowerCase()}'s name`)}
-        {!folded && <>
+        <Collapse open={!folded}>
         {p.buildings.length === 0 && !adding && (
           <p className="sb-empty">
             Press + to start your first project, or type “@Name” in a task.
@@ -289,7 +358,7 @@ export function Sidebar(p: Props) {
                   <span className="sb-text">{name}</span>
                 </button>
                 <span className={menu && menu.project === name && !menu.floor ? "sb-trail busy" : "sb-trail"}>
-                  <span className="sb-count">{b.open > 0 ? b.open : ""}</span>
+                  <Tick className="sb-count" value={b.open} />
                   <span className="sb-row-actions">
                     <button
                       type="button"
@@ -413,7 +482,7 @@ export function Sidebar(p: Props) {
                   </div>
                 )}
               </div>
-              {expanded && (
+              <Collapse open={expanded}>
                 <div className="sb-floors">
                   {/* Like Slack channels: General first, then the sections A–Z (the list uses the same order). */}
                   {[...b.floors].sort(bySection).map((f) => {
@@ -497,13 +566,13 @@ export function Sidebar(p: Props) {
                   })}
                   {adding?.kind === "floor" && adding.project === name && field(`New ${w.heading.toLowerCase()}'s name`)}
                 </div>
-              )}
+              </Collapse>
             </div>
             </Fragment>
           );
         })}
         {hiddenB.length > 0 && !showOthers && othersBtn}
-        </>}
+        </Collapse>
 
         {p.tags.length > 0 && (
           <>

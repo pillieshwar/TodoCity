@@ -1,3 +1,4 @@
+import { reducedMotion } from "../lib/motion";
 import { LogoBadge, SourceBadge, SourceMark } from "./SourceChip";
 import { fileLogo } from "../lib/sourceLogos";
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -232,7 +233,8 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
     }
     const target = days.includes(today) ? Math.max(now.getHours() - 2, hours[0]) : Math.max(8, hours[0]);
     const row = box.querySelector<HTMLElement>(`[data-row="${target}"]`);
-    box.scrollTop = row ? row.offsetTop : 0;
+    // Glides there, so you see where you are in the day.
+    box.scrollTo({ top: row ? row.offsetTop : 0, behavior: reducedMotion() ? "auto" : "smooth" });
     // Only when the week changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from]);

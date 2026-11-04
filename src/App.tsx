@@ -1,5 +1,6 @@
 import { actionFor, keyMap } from "./lib/appKeys";
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useScrollEdges } from "./lib/useMotion";
 import { CaptureCard, type CaptureState } from "./components/CaptureCard";
 import { Onboarding } from "./components/Onboarding";
 import { processCapture } from "./lib/capture";
@@ -628,6 +629,20 @@ export default function App() {
   const boardKey = list === "inbox" ? "inbox" : viewedProject !== null ? `project:${viewedProject}` : null;
   const viewMode = boardKey ? (lookOf(settings).list_views[boardKey] ?? "list") : "list";
   const boardView = full && boardKey !== null && !floorOpen && viewMode === "board" && !query.trim();
+  // The list being viewed: it cross-fades in when it changes, and each list
+  // remembers where it was scrolled (until TodoCity quits).
+  const viewKey = `${list}|${floorView?.project ?? ""}|${floorView?.floor ?? ""}|${boardView ? "board" : "list"}`;
+  const contentRef = useRef<HTMLElement>(null);
+  const scrolls = useRef(new Map<string, number>());
+  useLayoutEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    el.scrollTop = scrolls.current.get(viewKey) ?? 0;
+    const save = () => scrolls.current.set(viewKey, el.scrollTop);
+    el.addEventListener("scroll", save, { passive: true });
+    return () => el.removeEventListener("scroll", save);
+  }, [viewKey]);
+  useScrollEdges(contentRef, viewKey);
   // A board needs the room: the calendar pane stays closed there unless asked for.
   const [boardPane, setBoardPane] = useState(false);
   // Calendar has its own week grid, so its pane starts closed too; opening or
@@ -1964,7 +1979,7 @@ export default function App() {
           {tab === "tasks" ? (
             <div className={sidePane ? "full-body with-side" : "full-body"}>
               {upcoming && tasksShown ? (
-                <main className="full-content week">
+                <main className="full-content week view-fade">
                   {adding && (
                     <AddTaskForm
                       places={fieldPlaces}
@@ -1997,7 +2012,12 @@ export default function App() {
                   />
                 </main>
               ) : (
-                <main className={boardView ? "full-content board-mode" : "full-content"} data-autoscroll={boardView ? undefined : true}>
+                <main
+                  key={viewKey}
+                  ref={contentRef}
+                  className={boardView ? "full-content board-mode view-fade" : "full-content view-fade"}
+                  data-autoscroll={boardView ? undefined : true}
+                >
                   <div className={boardView ? "full-list wide" : "full-list"}>{listEl}</div>
                 </main>
               )}

@@ -56,8 +56,8 @@ export function taskActions(show: Show, locale: string) {
     }
   }
 
-  /** Change a task's date, time or repeat. */
-  async function reschedule(task: Task, patch: TaskPatch) {
+  /** Change a task's date, time or repeat. `quiet`: no "Moved to…" toast (the Calendar shows the move itself). */
+  async function reschedule(task: Task, patch: TaskPatch, opts: { quiet?: boolean } = {}) {
     const before: TaskPatch = {
       due_date: task.due_date,
       due_time: task.due_time,
@@ -65,6 +65,7 @@ export function taskActions(show: Show, locale: string) {
     };
     try {
       const t = await api.updateTask(task.id, patch);
+      if (opts.quiet) return;
       const dayMoved = patch.due_date !== undefined && patch.due_date !== task.due_date;
       const timeMoved = patch.due_time !== undefined && patch.due_time !== task.due_time;
       const parts: string[] = [];

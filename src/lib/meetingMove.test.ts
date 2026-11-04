@@ -26,7 +26,7 @@ describe("which meetings move", () => {
 });
 
 describe("moving a meeting", () => {
-  it("keeps its length and snaps to 5 minutes", () => {
+  it("keeps its length and snaps to quarter hours", () => {
     const m = moved(ev(), 0, 32);
     expect(m.start).toBe("2026-11-02T10:30:00");
     expect(m.end).toBe("2026-11-02T11:30:00");
@@ -36,16 +36,16 @@ describe("moving a meeting", () => {
     expect(m.start).toBe("2026-11-04T09:00:00");
     expect(m.end).toBe("2026-11-04T10:00:00");
   });
-  it("stretches between 5 minutes and a day", () => {
+  it("stretches between a quarter hour and a day", () => {
     expect(stretched(ev(), 28).end).toBe("2026-11-02T11:30:00");
-    expect(stretched(ev(), -200).end).toBe("2026-11-02T10:05:00");
+    expect(stretched(ev(), -200).end).toBe("2026-11-02T10:15:00");
     expect(minutesBetween(ev().start, stretched(ev(), 5000).end)).toBe(1440);
   });
   it("crosses midnight and month ends", () => {
     expect(addMinutes("2026-10-31T23:30:00", 45)).toBe("2026-11-01T00:15:00");
   });
   it("knows when nothing changed", () => {
-    expect(sameTime(ev(), moved(ev(), 0, 2))).toBe(true);
-    expect(sameTime(ev(), moved(ev(), 0, 5))).toBe(false);
+    expect(sameTime(ev(), moved(ev(), 0, 7))).toBe(true);
+    expect(sameTime(ev(), moved(ev(), 0, 8))).toBe(false);
   });
 });

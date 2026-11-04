@@ -8,6 +8,10 @@
 export const SNAP_MIN = 5;
 /** How tall a task with no set length is drawn, in minutes. */
 export const DEFAULT_BLOCK_MIN = 30;
+/** A task made in the Calendar (or first given a time there) is an hour long, as in Outlook. */
+export const CALENDAR_NEW_MIN = 60;
+/** Calendar drags and resizes move in quarter hours. */
+export const CAL_SNAP_MIN = 15;
 /** The longest task: a whole day. */
 export const MAX_DURATION_MIN = 1440;
 /** Quick picks for a task's length. Any other number can be typed. */
@@ -85,6 +89,27 @@ export function snapMinute(fraction: number, step = SNAP_MIN): number {
   if (!Number.isFinite(fraction)) return 0;
   const m = Math.round((Math.max(0, Math.min(1, fraction)) * 60) / step) * step;
   return Math.min(m, 60 - step);
+}
+
+/**
+ * Where a dragged block starts, from where its top edge is: `hour` plus a
+ * `fraction` of an hour (below 0 or past 1 when the top is in another hour),
+ * snapped to `step`, kept within the day. Returns minutes from midnight.
+ */
+export function startFromTop(hour: number, fraction: number, step = CAL_SNAP_MIN): number {
+  const raw = (hour + (Number.isFinite(fraction) ? fraction : 0)) * 60;
+  const m = Math.round(raw / step) * step;
+  return Math.max(0, Math.min(24 * 60 - step, m));
+}
+
+/** A click in an hour: the half hour it's in (Outlook's slots): 0 or 30. */
+export function halfHourAt(fraction: number): 0 | 30 {
+  return Number.isFinite(fraction) && fraction >= 0.5 ? 30 : 0;
+}
+
+/** How many lines of title fit a block this tall (pixels): 1 to 6. */
+export function titleLines(heightPx: number, linePx = 15, padPx = 8): number {
+  return Math.max(1, Math.min(6, Math.floor((heightPx - padPx) / linePx)));
 }
 
 export interface Block {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blockFit, drawnLen, foldBlocks, durationLabel, endOf, layoutBlocks, minutesOf, parseDuration, snapMinute, takeDuration, timeOf } from "./timeblock";
+import { blockFit, halfHourAt, startFromTop, titleLines, drawnLen, foldBlocks, durationLabel, endOf, layoutBlocks, minutesOf, parseDuration, snapMinute, takeDuration, timeOf } from "./timeblock";
 
 describe("minutes and times", () => {
   it("round-trips any minute", () => {
@@ -130,5 +130,29 @@ describe("short blocks", () => {
     const { shown, folds } = foldBlocks(blocks, layoutBlocks(blocks), 2);
     expect(shown.size).toBe(2);
     expect(folds).toEqual([]);
+  });
+});
+
+describe("Calendar drags and clicks", () => {
+  it("starts a dragged block where its top edge is, in quarter hours", () => {
+    expect(startFromTop(9, 0)).toBe(540);
+    expect(startFromTop(9, 0.3)).toBe(555);
+    expect(startFromTop(9, 0.6)).toBe(570);
+    // The top can sit in the hour above the pointer.
+    expect(startFromTop(10, -0.5)).toBe(570);
+    expect(startFromTop(0, -2)).toBe(0);
+    expect(startFromTop(23, 1.5)).toBe(24 * 60 - 15);
+  });
+  it("adds at the half hour that was clicked", () => {
+    expect(halfHourAt(0.1)).toBe(0);
+    expect(halfHourAt(0.49)).toBe(0);
+    expect(halfHourAt(0.5)).toBe(30);
+    expect(halfHourAt(Number.NaN)).toBe(0);
+  });
+  it("wraps a title over the lines that fit", () => {
+    expect(titleLines(22)).toBe(1);
+    expect(titleLines(36)).toBe(1);
+    expect(titleLines(70)).toBe(4);
+    expect(titleLines(500)).toBe(6);
   });
 });

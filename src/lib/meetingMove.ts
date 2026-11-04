@@ -1,8 +1,8 @@
 import type { CalendarEvent } from "./types";
 
-/** Meetings move in 5-minute steps, like tasks. */
-export const MEETING_SNAP = 5;
-const MIN_LEN = 5;
+/** Meetings move in quarter hours, like tasks in the Calendar. */
+export const MEETING_SNAP = 15;
+const MIN_LEN = 15;
 const MAX_LEN = 24 * 60;
 
 /** Can this meeting be dragged in the Calendar? Timed, on one day, and allowed by Calendar. */
@@ -40,7 +40,7 @@ export function moved(e: CalendarEvent, days: number, minutes: number): Calendar
   return { ...e, start: addMinutes(e.start, by), end: addMinutes(e.end, by) };
 }
 
-/** Bottom edge dragged by `minutes` (snapped): 5 minutes to a day long. */
+/** Bottom edge dragged by `minutes` (snapped): a quarter hour to a day long. */
 export function stretched(e: CalendarEvent, minutes: number): CalendarEvent {
   const len = Math.max(MIN_LEN, Math.min(MAX_LEN, minutesBetween(e.start, e.end) + snap(minutes)));
   return { ...e, end: addMinutes(e.start, len) };

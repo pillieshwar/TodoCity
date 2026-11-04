@@ -3150,7 +3150,7 @@ button.tf-chip { cursor: pointer; }
 .group[data-drop-floor].drop .group-empty { border-color: var(--teal); color: var(--teal); }
 
 /* Calendar hours: each task and event at its real start and length. */
-.week-grid { --wg-hour: 52px; }
+.week-grid { --wg-hour: 72px; }
 .wg-hours { position: relative; }
 .wg-body .wg-row { height: var(--wg-hour); }
 .wg-body .wg-cell { min-height: 0; height: 100%; overflow: visible; }
@@ -3717,6 +3717,77 @@ h1, h2, h3, .empty-big, .story-card h2 { text-wrap: balance; }
 /* Keyboard focus: one soft glow everywhere, never on a click. */
 :focus { outline: none; }
 :focus-visible { outline: 2px solid color-mix(in srgb, var(--teal) 60%, transparent); outline-offset: 2px; }
+
+/* ── Calendar, the Outlook way (0.4.82) ──────────────────────────────────────
+   Taller hours with a dashed half-hour line; blocks filled with their color
+   (white or dark text, whichever reads: blockColor.ts) showing just the title;
+   a dragged task's copy, the same size, where it will land; and a task's
+   details opening beside its block (BlockPop.tsx). */
+.wg-body .wg-cell::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%; z-index: 0; pointer-events: none;
+  border-top: 1px dashed color-mix(in srgb, var(--line) 90%, transparent);
+}
+.wg-cell > .wg-add { position: absolute; left: 4px; right: 4px; z-index: 6; }
+.week-grid .wg-task, .week-grid .wg-event {
+  background: var(--fill, var(--teal)); color: var(--on, #fff);
+  border: 0; border-left: 3px solid color-mix(in srgb, var(--fill, var(--teal)) 60%, #000); border-radius: 6px;
+  box-shadow: none; transition: opacity 300ms, transform 300ms, filter var(--dur-1);
+}
+.week-grid .wg-task:hover, .week-grid .wg-event:hover {
+  filter: brightness(1.07); border-color: transparent; border-left-color: color-mix(in srgb, var(--fill, var(--teal)) 60%, #000);
+}
+.week-grid .wg-task.late, .week-grid .wg-task.deadline { border-left-color: var(--accent); }
+.week-grid .wg-task.picked, .week-grid .wg-task.picked:hover {
+  background: var(--fill, var(--teal)); box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--fill, var(--teal));
+}
+.week-grid .wg-title, .week-grid .wg-event-title { color: var(--on, #fff); font-weight: 600; font-size: 12px; line-height: 15px; }
+.week-grid .wg-span, .week-grid .wg-event-time, .week-grid .wg-late, .week-grid .wg-time { color: color-mix(in srgb, var(--on, #fff) 82%, transparent); }
+/* The title wraps over the lines that fit (--lines), then "…". */
+.week-grid .wg-task.wg-block .wg-t, .week-grid .wg-event.wg-block .wg-event-title {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--lines, 2); white-space: normal;
+  overflow: hidden; overflow-wrap: break-word; -webkit-mask-image: none; mask-image: none;
+}
+.week-grid .wg-block.tiny .wg-t, .week-grid .wg-event.wg-block.tiny .wg-event-title {
+  display: block; white-space: nowrap; text-overflow: ellipsis;
+}
+.week-grid .wg-event.wg-block { padding: 4px 7px 4px 6px; }
+.week-grid .wg-event.wg-block.tiny { padding-top: 2px; padding-bottom: 2px; }
+.week-grid .wg-task .plan-check { border-color: color-mix(in srgb, var(--on, #fff) 75%, transparent); }
+.week-grid .wg-task .plan-check:hover { border-color: var(--on, #fff); color: var(--on, #fff); background: color-mix(in srgb, var(--on, #fff) 16%, transparent); }
+.week-grid .wg-task.completing .plan-check { background: var(--on, #fff); border-color: var(--on, #fff); color: var(--fill, var(--teal)); }
+.week-grid .wg-event.focus-block {
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--teal) 18%, transparent) 0 6px, color-mix(in srgb, var(--teal) 10%, transparent) 6px 12px);
+  border-left-color: var(--teal);
+}
+.week-grid .wg-event.focus-block .wg-event-title, .week-grid .wg-event.focus-block .wg-event-time { color: var(--ink); }
+/* While a task is dragged: the block stays faint where it was, and a copy
+   the same size shows where it lands, with its new time. */
+.week-grid .wg-task.lifted { opacity: 0.35; filter: none; }
+.wg-shadow {
+  z-index: 6; pointer-events: none; cursor: grabbing;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24), 0 0 0 1px color-mix(in srgb, var(--on, #fff) 30%, transparent);
+  transition: top 90ms var(--ease);
+}
+.week-grid .wg-shadow .wg-title { display: flex; flex-direction: column; }
+.week-grid .wg-shadow .wg-span { display: block; margin-top: 1px; font-size: 11px; font-weight: 600; }
+.week-grid .wg-shadow.tiny .wg-title { flex-direction: row; gap: 6px; align-items: center; }
+.week-grid .wg-shadow.tiny .wg-t { flex: 1; min-width: 0; }
+.week-grid .wg-shadow.tiny .wg-span { flex: none; margin: 0; }
+.dragging .week-grid, .dragging .week-grid * { cursor: grabbing !important; }
+
+/* A task's details, beside its block. */
+.block-pop {
+  position: fixed; z-index: 70; width: 380px; max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
+  display: flex; flex-direction: column; box-sizing: border-box; border-radius: 12px;
+  background: var(--paper); border: 1px solid var(--line);
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.24), 0 2px 6px rgba(0, 0, 0, 0.08);
+  animation: menu-in var(--dur-2) var(--ease); transform-origin: left top;
+}
+.block-pop.left { transform-origin: right top; }
+.block-pop.over { transform-origin: center top; }
+.block-pop > .side-pane { width: 100%; flex: 1 1 auto; min-height: 0; border-left: 0; background: transparent; border-radius: 12px; }
+.block-pop .sp-body { padding: 2px 18px 18px; }
+.block-pop .dp-bar { height: 36px; border-bottom: 0; }
 
 /* "Reduce motion" on: everything above (and before) is instant. */
 @media (prefers-reduced-motion: reduce) {

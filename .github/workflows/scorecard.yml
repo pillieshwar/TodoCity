@@ -15,6 +15,9 @@ on:
 permissions: {}
 
 jobs:
+  # Publishing to api.scorecard.dev (the README badge) only accepts a job made
+  # of `uses:` steps, so the score summary runs in its own job below.
+  # https://github.com/ossf/scorecard-action#workflow-restrictions
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-latest
@@ -34,7 +37,26 @@ jobs:
           results_format: sarif
           # The public badge only reflects main; runs on a branch just report.
           publish_results: ${{ github.ref == 'refs/heads/main' }}
-      # The same checks again as JSON, to list every score in the run summary.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scorecard-results
+          path: results.sarif
+          retention-days: 5
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          sarif_file: results.sarif
+
+  scores:
+    name: Scores
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The same checks as JSON, to list every score in the run summary.
       - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
         with:
           results_file: results.json
@@ -55,11 +77,3 @@ jobs:
       - name: Scores (the rest)
         run: |
           jq -r '.checks | sort_by(.score) | .[9:][] | "::notice title=\(.name) \(if .score < 0 then "n/a" else "\(.score)/10" end)::\(.reason)"' results.json
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: scorecard-results
-          path: results.sarif
-          retention-days: 5
-      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
-        with:
-          sarif_file: results.sarif

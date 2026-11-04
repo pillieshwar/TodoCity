@@ -1937,11 +1937,25 @@ await shot("motion-sidebar-glide", FULL, MOTION(), async (p) => {
   const rowY = async (name) => p.locator(".sb-nav .sb-item", { hasText: name }).first().evaluate((e) => e.getBoundingClientRect().top);
   const glideY = () => glide.evaluate((e) => e.getBoundingClientRect().top);
   if (Math.abs((await glideY()) - (await rowY("Today"))) > 1) throw new Error("the highlight isn't on Today");
+  const [from, to] = [await rowY("Today"), await rowY("Inbox")];
+  // Watch the highlight every frame while it moves: it must pass between the rows.
+  const seen = p.evaluate(
+    () =>
+      new Promise((done) => {
+        const g = document.querySelector(".sb-nav .sb-glide");
+        const ys = [];
+        const t0 = performance.now();
+        const step = () => {
+          ys.push(g.getBoundingClientRect().top);
+          if (performance.now() - t0 < 900) requestAnimationFrame(step);
+          else done(ys);
+        };
+        requestAnimationFrame(step);
+      }),
+  );
   await p.locator(".sb-nav .sb-item", { hasText: "Inbox" }).click();
-  await p.waitForTimeout(60);
-  const [g, from, to] = [await glideY(), await rowY("Today"), await rowY("Inbox")];
-  if (!(g > from + 1 && g < to - 1)) throw new Error(`the highlight jumped instead of gliding: ${g} between ${from} and ${to}?`);
-  await p.waitForTimeout(400);
+  const ys = await seen;
+  if (!ys.some((y) => y > from + 2 && y < to - 2)) throw new Error(`the highlight jumped instead of gliding from ${from} to ${to}: ${ys.map(Math.round).join(",")}`);
   if (Math.abs((await glideY()) - (await rowY("Inbox"))) > 1) throw new Error("the highlight didn't land on Inbox");
 });
 await shot("motion-menu-and-tooltip", FULL, MOTION(), async (p) => {

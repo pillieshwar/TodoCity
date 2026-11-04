@@ -1,4 +1,11 @@
 {
+  "0.4.80": [
+    "Focus Blocks: put a focus block on your calendar and your Mac's Focus turns on when it starts and off when it ends",
+    "Make blocks in TodoCity's Calendar (type “Focus” in an hour, or “Focus: draft the brief for 90 min”) or in Apple Calendar",
+    "While a block runs, TodoCity shows only the tasks you picked for it, with +15 min and End now",
+    "When it ends, a short wrap-up shows what you finished and moves the rest to tomorrow in one tap",
+    "Set it up in Settings → Focus Blocks"
+  ],
   "0.4.79": [
     "Calendar shows where each task and meeting came from as a small logo in its corner",
     "Meetings show their account: Google Calendar or Outlook",

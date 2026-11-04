@@ -3557,3 +3557,50 @@ img.dark-tile { background: #18181b; border-radius: 4px; padding: 1.5px; box-siz
 .wg-block.tiny > .src-badge img, .wg-block.fit-line > .src-badge img { width: 12px; height: 12px; }
 :root[data-theme="dark"] .src-badge:not(.dark) { background: #f4f4f5; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .src-badge:not(.dark) { background: #f4f4f5; } }
+
+/* Focus Blocks: the block running now, its wrap-up, and "Focus now". */
+.focus-now {
+  margin: 10px 12px 8px; padding: 10px 12px; border-radius: 12px;
+  background: var(--teal-soft); border: 1px solid color-mix(in srgb, var(--teal) 30%, transparent);
+  display: flex; flex-direction: column; gap: 8px; animation: rise 160ms ease-out;
+}
+.focus-now.compact { margin: 0 12px 8px; padding: 8px 10px; }
+.focus-now.quiet { background: transparent; border-style: dashed; padding: 6px 10px; }
+.side-pane .focus-now { margin: 0 0 10px; }
+.focus-head { display: flex; align-items: flex-start; gap: 9px; }
+.focus-moon {
+  flex: none; width: 12px; height: 12px; margin-top: 3px; border-radius: 50%;
+  background: var(--teal); box-shadow: inset -4px -2px 0 0 var(--teal-soft);
+}
+.focus-moon.done { background: var(--teal); box-shadow: none; }
+.focus-moon.idle { margin-top: 0; background: transparent; border: 1.5px solid var(--teal); box-shadow: none; box-sizing: border-box; }
+.focus-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; line-height: 17px; }
+.focus-text strong { font-weight: 650; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.focus-text span { color: var(--muted); }
+.focus-close { flex: none; border: 0; background: transparent; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.focus-close:hover { color: var(--ink); }
+.focus-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.focus-note { flex: 1; min-width: 0; margin: 0; font-size: 12px; color: var(--muted); }
+.focus-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.focus-tasks li { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink); }
+.focus-tasks label { display: flex; align-items: center; gap: 7px; min-width: 0; cursor: pointer; }
+.focus-tasks li.done span { color: var(--muted); text-decoration: line-through; }
+.focus-task-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.focus-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.focus-now .ghost { border-radius: 999px; padding: 3px 10px; font-size: 11.5px; font-weight: 600; color: var(--ink); cursor: pointer; }
+.focus-now .ghost:hover { border-color: var(--teal); }
+/* Focus blocks in Calendar: the accent, a soft stripe, and a moon badge. */
+.wg-event.focus-block {
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--teal) 18%, transparent) 0 6px, color-mix(in srgb, var(--teal) 10%, transparent) 6px 12px);
+  box-shadow: inset 3px 0 0 var(--teal);
+}
+.plan-event.focus-block .plan-event-bar { background: var(--teal) !important; }
+.focus-badge {
+  position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--teal); box-shadow: inset -3px -1px 0 0 var(--paper);
+}
+.plan-event.focus-block { position: relative; }
+.plan-event .focus-badge { top: 50%; margin-top: -4.5px; right: 6px; }
+.focus-steps { margin: 4px 0 4px 18px; padding: 0; font-size: 12px; line-height: 1.55; color: var(--muted); }
+.focus-steps strong { color: var(--ink); font-weight: 600; }
+.focus-steps code { font-size: 11.5px; padding: 0 4px; border-radius: 4px; background: color-mix(in srgb, var(--line) 70%, transparent); }

@@ -334,6 +334,25 @@ function mockTauri(s) {
       s.events = s.events.map((e) => (e === at ? now : e));
       return now;
     },
+    // v0.4.80: Focus Blocks.
+    focus_status: () => s.focus ?? null,
+    focus_set: (a) => {
+      window.__focusSet = a;
+      s.focus = { ...(s.focus ?? {}), ...(a.enabled !== null && a.enabled !== undefined ? { enabled: a.enabled } : {}) };
+      return s.focus;
+    },
+    focus_add_block: (a) => {
+      window.__focusAdded = a;
+      return { id: "f-new", title: a.title ?? "Focus", start: a.start, end: a.end, all_day: false, calendar: "Focus", calendar_key: "On My Mac / Focus", color: "#5249d9", focus: true };
+    },
+    focus_end_now: () => {
+      window.__focusEnded = true;
+      return s.focus;
+    },
+    focus_extend: (a) => {
+      window.__focusExtended = a.minutes;
+      return s.focus;
+    },
     autostart_enabled: () => true,
     panel_full: () => !!s.full,
     // v0.4.66: the agent panel and "Send to agent".
@@ -2606,6 +2625,62 @@ await shot("full-add-length", FULL, full({ settings: DARK }), async (p) => {
   await p.keyboard.type("Stand-up tomorrow 9:07am for 7 min");
   await p.waitForTimeout(150);
   if (!(await p.locator(".add-task .tf-chip.set", { hasText: "7 min" }).count())) throw new Error("“for 7 min” didn't set the length");
+});
+
+// v0.4.80: Focus Blocks — a block running now, its wrap-up, Calendar and Settings.
+const FOCUS_TASKS = TASKS.slice(0, 3);
+const FOCUS_BASE = {
+  supported: true,
+  enabled: true,
+  calendar: "On My Mac / Focus",
+  calendar_access: "full",
+  shortcut: "TodoCity Focus",
+  shortcut_ready: true,
+  shortcut_link: null,
+  login_item: true,
+  minutes: 50,
+  active: null,
+  next: null,
+  last: null,
+  error: null,
+};
+const FOCUS_ON = {
+  ...FOCUS_BASE,
+  active: { title: "Deep work", start: localStamp(-16), end: localStamp(34), keys: ["f1@x"], tasks: FOCUS_TASKS.map((t) => t.id) },
+};
+const FOCUS_DONE = {
+  ...FOCUS_BASE,
+  last: { title: "Deep work", start: localStamp(-60), end: localStamp(-10), keys: ["f1@y"], tasks: FOCUS_TASKS.map((t) => t.id), reason: "completed", at: localStamp(-10) },
+};
+const FOCUS_EVENT = { id: "f1", title: "Deep work", start: localStamp(-16), end: localStamp(34), all_day: false, calendar: "Focus", calendar_key: "On My Mac / Focus", color: "#5249d9", focus: true };
+await shot("panel-focus-on", PANEL, scenario({ focus: FOCUS_ON }), async (p) => {
+  if (!(await p.locator(".focus-now.on", { hasText: "Focus is on until" }).count())) throw new Error("the running block isn't shown");
+  await p.getByRole("button", { name: "+15 min" }).first().click();
+  await p.waitForTimeout(150);
+  if ((await p.evaluate(() => window.__focusExtended)) !== 15) throw new Error("+15 min didn't extend the block");
+});
+await shot("panel-focus-on-dark", PANEL, scenario({ focus: FOCUS_ON }), async () => {}, true);
+await shot("panel-focus-wrap-up", PANEL, scenario({ focus: FOCUS_DONE }), async (p) => {
+  if (!(await p.locator(".focus-now", { hasText: "Focus block finished" }).count())) throw new Error("no wrap-up card");
+});
+await shot("panel-focus-now", PANEL, scenario({ focus: FOCUS_BASE }), async (p) => {
+  await p.getByRole("button", { name: "Focus now" }).first().click();
+  await p.waitForTimeout(100);
+  await p.getByRole("button", { name: "25 min" }).first().click();
+  await p.waitForTimeout(200);
+  const a = await p.evaluate(() => window.__focusAdded);
+  if (!a || !a.start || !a.end) throw new Error("Focus now didn't add a block");
+});
+await shot("popover-focus-on", POP, scenario({ label: "popover", focus: FOCUS_ON }));
+await shot("full-week-focus-block", FULL, full({ settings: DARK, focus: FOCUS_ON, events: [...FULL_EVENTS, FOCUS_EVENT] }), async (p) => {
+  await side(/Calendar/)(p);
+  if (!(await p.locator(".wg-event.focus-block").count())) throw new Error("the focus block isn't drawn as one");
+});
+await shot("panel-settings-focus", PANEL, scenario({ focus: { ...FOCUS_BASE, enabled: false, shortcut_ready: false } }), async (p) => {
+  await tab(p, "Focus Blocks");
+});
+await shot("full-settings-focus", FULL, full({ settings: LIGHT, focus: FOCUS_BASE }), async (p) => {
+  await tab(p, "Focus Blocks");
 });
 
 await shot("panel-full-button", PANEL, scenario({ settings: DARK }), async (p) => {

@@ -18,6 +18,7 @@ import type {
   CalendarInfo,
   CalendarStatus,
   CalendarSyncStatus,
+  FocusStatus,
   AgentChange,
   AgentCliStatus,
   AgentRun,
@@ -124,6 +125,32 @@ export const api = {
   calendarMoveEvent: (m: { id: string; at: string; start: string; end: string; everyone: boolean }) =>
     invoke<CalendarEvent>("calendar_move_event", m),
   calendarOpenPrivacySettings: () => invoke<void>("calendar_open_privacy_settings"),
+  focusStatus: () => invoke<FocusStatus>("focus_status"),
+  focusSet: (change: { enabled?: boolean; calendar?: string; shortcut?: string; minutes?: number }) =>
+    invoke<FocusStatus>("focus_set", {
+      enabled: change.enabled ?? null,
+      calendar: change.calendar ?? null,
+      shortcut: change.shortcut ?? null,
+      minutes: change.minutes ?? null,
+    }),
+  /** Make (or find) the "Focus" calendar and use it. */
+  focusMakeCalendar: () => invoke<FocusStatus>("focus_make_calendar"),
+  /** Turn Focus on for a minute, to check the shortcut. */
+  focusTry: () => invoke<void>("focus_try"),
+  /** Turn Focus on again for the running block. */
+  focusResume: () => invoke<FocusStatus>("focus_resume"),
+  focusEndNow: () => invoke<FocusStatus>("focus_end_now"),
+  /** Move the running block's end later. */
+  focusExtend: (minutes: number) => invoke<FocusStatus>("focus_extend", { minutes }),
+  /** A new focus block (local `YYYY-MM-DDTHH:MM[:SS]`), with picked tasks. */
+  focusAddBlock: (b: { start: string; end: string; title?: string | null; tasks: number[] }) =>
+    invoke<CalendarEvent>("focus_add_block", { start: b.start, end: b.end, title: b.title ?? null, tasks: b.tasks }),
+  focusDeleteBlock: (id: string, at: string) => invoke<void>("focus_delete_block", { id, at }),
+  focusBlockTasks: (id: string, at: string) => invoke<number[]>("focus_block_tasks", { id, at }),
+  focusSetBlockTasks: (id: string, at: string, tasks: number[]) =>
+    invoke<void>("focus_set_block_tasks", { id, at, tasks }),
+  focusOpenShortcuts: () => invoke<void>("focus_open_shortcuts"),
+  focusOpenSystemSettings: () => invoke<void>("focus_open_system_settings"),
   openSource: (id: number) => invoke<void>("open_source", { id }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   restoreTask: (task: Task) => invoke<Task>("restore_task", { task }),
@@ -361,6 +388,11 @@ export function onTermExit(handler: (id: number) => void): Promise<UnlistenFn> {
 /** Calendar sync ran, or its choices changed. */
 export function onCalendarSyncChanged(handler: () => void): Promise<UnlistenFn> {
   return listen("calendar-sync-changed", () => handler());
+}
+
+/** A focus block started, ended or changed. */
+export function onFocusChanged(handler: () => void): Promise<UnlistenFn> {
+  return listen("focus-changed", () => handler());
 }
 
 /** The Calendar connector was turned on or off, or its calendars changed. */

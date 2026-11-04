@@ -102,6 +102,32 @@ pub struct AppSettings {
     /// Keys the person changed for actions in task lists (`app_keys::ACTIONS`
     /// id → key). Unchanged ones aren't stored.
     pub app_keys: std::collections::BTreeMap<String, String>,
+    /// Focus Blocks: events on a Focus calendar turn the Mac's Focus on.
+    pub focus: FocusSettings,
+}
+
+/// Focus Blocks (see `crate::focus`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FocusSettings {
+    pub enabled: bool,
+    /// The calendar whose events are focus blocks, by `calendar::key`.
+    pub calendar: Option<String>,
+    /// The Shortcuts shortcut that sets Focus.
+    pub shortcut: String,
+    /// Length of a new focus block, in minutes.
+    pub minutes: u32,
+}
+
+impl Default for FocusSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            calendar: None,
+            shortcut: "TodoCity Focus".into(),
+            minutes: 50,
+        }
+    }
 }
 
 /// Limits for the right-hand pane's width.
@@ -297,6 +323,7 @@ impl Default for AppSettings {
             mode: Some("personal".into()),
             open_full: true,
             app_keys: Default::default(),
+            focus: FocusSettings::default(),
         }
     }
 }

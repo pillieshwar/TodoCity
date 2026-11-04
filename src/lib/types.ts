@@ -467,6 +467,46 @@ export interface CalendarEvent {
   movable?: "yes" | "everyone" | "no";
   /** The account's logo (`google_calendar`, `outlook`); none for iCloud and On My Mac. */
   account?: string | null;
+  /** The calendar's key (account / title). */
+  calendar_key?: string;
+  /** On the Focus calendar: a focus block. */
+  focus?: boolean;
+}
+
+/** Mirrors `focus::BlockView`. Times are local `YYYY-MM-DDTHH:MM:SS`. */
+export interface FocusBlockView {
+  title: string;
+  start: string;
+  end: string;
+  /** The block occurrences in it. */
+  keys: string[];
+  /** Picked task ids, in order. */
+  tasks: number[];
+}
+
+/** Mirrors `todocity_core::focus::Ended`. */
+export type FocusEnded = "completed" | "by_you" | "changed" | "missed";
+
+/** Mirrors `focus::Status`. */
+export interface FocusStatus {
+  supported: boolean;
+  enabled: boolean;
+  /** The Focus calendar's key, once chosen. */
+  calendar: string | null;
+  calendar_access: RemindersAccess;
+  shortcut: string;
+  shortcut_ready: boolean;
+  /** A link that adds the shortcut, when TodoCity offers one. */
+  shortcut_link: string | null;
+  login_item: boolean;
+  /** Length of a new block, in minutes. */
+  minutes: number;
+  active: FocusBlockView | null;
+  /** The next block today, when none is running. */
+  next: FocusBlockView | null;
+  /** The block that ended last (for a few hours), for the wrap-up card. */
+  last: (FocusBlockView & { reason: FocusEnded; at: string }) | null;
+  error: string | null;
 }
 
 /** Mirrors `calendar::Status`. */

@@ -20,6 +20,7 @@ const HOUR_PX = 52;
 const ANY_SHOWN = 2;
 import { NewTaskField } from "./DayPlan";
 import { canMove, moved, occurrenceKey, sameTime, stretched } from "../lib/meetingMove";
+import { addFocusFromEntry } from "./FocusNow";
 
 interface Props {
   tasks: Task[];
@@ -377,14 +378,18 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
     return (
       <div
         key={occurrenceKey(e)}
-        className={["wg-event", "wg-block", height < 34 ? "tiny" : "", movable ? "movable" : "", lifted ? "lifted" : ""].filter(Boolean).join(" ")}
+        className={["wg-event", "wg-block", e.focus ? "focus-block" : "", height < 34 ? "tiny" : "", movable ? "movable" : "", lifted ? "lifted" : ""].filter(Boolean).join(" ")}
         style={{ top, height, left, width, "--ev": e.color ?? "var(--faint)" } as CSSProperties}
-        title={`${e.title || "Busy"} · ${span} · ${e.calendar}${movable ? (e.movable === "everyone" ? "\nDrag to move it for everyone" : "\nDrag to move it") : ""}`}
+        title={`${e.title || "Busy"} · ${span} · ${e.focus ? "Focus block — Focus turns on when it starts" : e.calendar}${movable ? (e.movable === "everyone" ? "\nDrag to move it for everyone" : "\nDrag to move it") : ""}`}
         onPointerDown={movable ? (ev) => startEvDrag(ev, e, "move") : undefined}
       >
         <span className="wg-event-title">{e.title || "Busy"}</span>
         {(height >= 34 || lifted) && <span className="wg-event-time">{span}</span>}
-        <LogoBadge logo={fileLogo(e.account)} title={e.account === "outlook" ? "from Outlook" : e.account === "google_calendar" ? "from Google Calendar" : undefined} />
+        {e.focus ? (
+          <span className="focus-badge" aria-label="Focus block" />
+        ) : (
+          <LogoBadge logo={fileLogo(e.account)} title={e.account === "outlook" ? "from Outlook" : e.account === "google_calendar" ? "from Google Calendar" : undefined} />
+        )}
         {movable && <span className="wg-resize" aria-hidden onPointerDown={(ev) => startEvDrag(ev, e, "stretch")} />}
       </div>
     );
@@ -468,6 +473,13 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
         placeholder={at === null ? "New task…" : `New task at ${timeLabel(at, locale)}…`}
         onDone={async (typed) => {
           setAddAt(null);
+          // "Focus for 90 min" in an hour: a focus block, not a task.
+          try {
+            if (await addFocusFromEntry(typed ?? "", iso, at)) return;
+          } catch (e) {
+            onError?.(String(e));
+            return;
+          }
           // "Stand-up for 7 min": the length comes off the title.
           const { minutes, rest } = takeDuration(typed ?? "");
           const title = rest || typed;

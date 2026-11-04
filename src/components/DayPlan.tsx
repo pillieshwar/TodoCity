@@ -7,6 +7,7 @@ import type { TaskActions } from "../lib/taskActions";
 import type { TaskDrag } from "../lib/useTaskDrag";
 import type { CalendarEvent, NewTask, Task } from "../lib/types";
 import { useProjectColors } from "../lib/colors";
+import { addFocusFromEntry } from "./FocusNow";
 
 interface Props {
   tasks: Task[];
@@ -122,10 +123,15 @@ export function DayPlan({ tasks, day, today, now, locale, events, actions, drag,
         ? `until ${timeLabel(e.end.slice(11, 16), locale)}`
         : `${timeLabel(e.start.slice(11, 16), locale)} – ${timeLabel(e.end.slice(11, 16), locale)}`;
     return (
-      <div key={`${e.id}${e.start}`} className="plan-event" title={`${e.title || "Busy"}${at ? ` · ${at}` : ""} · ${e.calendar}`}>
+      <div
+        key={`${e.id}${e.start}`}
+        className={e.focus ? "plan-event focus-block" : "plan-event"}
+        title={`${e.title || "Busy"}${at ? ` · ${at}` : ""} · ${e.focus ? "Focus block" : e.calendar}`}
+      >
         <span className="plan-event-bar" style={{ background: e.color ?? "var(--faint)" }} aria-hidden />
         <span className="plan-event-title">{e.title || "Busy"}</span>
         {at && <span className="plan-event-time">{at}</span>}
+        {e.focus && <span className="focus-badge" aria-label="Focus block" />}
       </div>
     );
   };
@@ -136,6 +142,9 @@ export function DayPlan({ tasks, day, today, now, locale, events, actions, drag,
       onDone={async (title) => {
         setAddAt(null);
         if (!title) return;
+        const time = at === "any" ? null : `${String(at).padStart(2, "0")}:00`;
+        // "Focus for 90 min" in an hour: a focus block, not a task.
+        if (await addFocusFromEntry(title, day, time)) return;
         await onAdd({
           title,
           due_date: day,

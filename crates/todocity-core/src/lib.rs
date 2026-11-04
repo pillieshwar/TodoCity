@@ -20,6 +20,7 @@
 //! * [`mirror`] — keeping TodoCity in step with Things 3 or Todoist.
 //! * [`sync`] — end-to-end encrypted sync between a person's Macs.
 //! * [`modes`] — which projects a Mac shows right now (Work, Personal…).
+//! * [`focus`] — when Focus Blocks turn the Mac's Focus on and off.
 //! * [`agent_tools`] — what AI agents can do over MCP with full access.
 //! * [`clipboard_guard`] — the decision logic for the clipboard fallback.
 
@@ -34,6 +35,7 @@ pub mod data_folder;
 pub mod double_copy;
 pub mod download;
 pub mod extraction;
+pub mod focus;
 pub mod llm;
 pub mod local_models;
 pub mod meeting_move;

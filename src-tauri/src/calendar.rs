@@ -42,6 +42,10 @@ pub struct EventInfo {
     pub end: String,
     pub all_day: bool,
     pub calendar: String,
+    /// The calendar's `key` (account / title).
+    pub calendar_key: String,
+    /// It's on the Focus calendar: a focus block (set in `calendar_events`).
+    pub focus: bool,
     pub color: Option<String>,
     /// Whether it can be moved from TodoCity (`meeting_move::movable`).
     pub movable: Movable,
@@ -159,6 +163,62 @@ pub fn move_event(
     }
 }
 
+/// Events on one calendar (by `key`) overlapping `from..=to`, whether or not
+/// it's hidden in the meetings view. Used for focus blocks.
+pub fn events_in(
+    key: &str,
+    from: chrono::NaiveDate,
+    to: chrono::NaiveDate,
+) -> Result<Vec<EventInfo>, String> {
+    #[cfg(target_os = "macos")]
+    return macos::events_in(key.to_string(), from, to);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (key, from, to);
+        Ok(Vec::new())
+    }
+}
+
+/// A calendar called `title` that TodoCity can write to: the one already
+/// there, or a new one (On My Mac when the Mac offers it, else the account
+/// new events go to).
+pub fn make_calendar(title: &str) -> Result<CalendarInfo, String> {
+    #[cfg(target_os = "macos")]
+    return macos::make_calendar(title.to_string());
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = title;
+        Err("Calendar is only available on macOS.".into())
+    }
+}
+
+/// Add an event to the calendar `key`, local `YYYY-MM-DDTHH:MM[:SS]` times.
+pub fn create_event(key: &str, title: &str, start: &str, end: &str) -> Result<EventInfo, String> {
+    use todocity_core::meeting_move::{check_times, parse_local};
+    let (start, end) = (parse_local(start)?, parse_local(end)?);
+    check_times(start, end)?;
+    #[cfg(target_os = "macos")]
+    return macos::create_event(key.to_string(), title.to_string(), start, end);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (key, title);
+        Err("Calendar is only available on macOS.".into())
+    }
+}
+
+/// Delete one occurrence (starting at `at`) of an event, only if it's on the
+/// calendar `key`.
+pub fn delete_event(id: &str, at: &str, key: &str) -> Result<(), String> {
+    let at = todocity_core::meeting_move::parse_local(at)?;
+    #[cfg(target_os = "macos")]
+    return macos::delete_event(id.to_string(), at, key.to_string());
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (id, at, key);
+        Err("Calendar is only available on macOS.".into())
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod macos {
     #![allow(unused_unsafe)]
@@ -179,7 +239,9 @@ mod macos {
         EKAuthorizationStatus, EKCalendar, EKEntityType, EKEvent, EKEventStore,
         EKEventStoreChangedNotification, EKSourceType, EKSpan,
     };
-    use objc2_foundation::{NSArray, NSDate, NSError, NSNotification, NSNotificationCenter};
+    use objc2_foundation::{
+        NSArray, NSDate, NSError, NSNotification, NSNotificationCenter, NSString,
+    };
     use tauri::{AppHandle, Emitter};
     use todocity_core::meeting_move::{allowed, movable, EventFacts};
 
@@ -206,6 +268,30 @@ mod macos {
             end: NaiveDateTime,
             everyone: bool,
             reply: Sender<Result<EventInfo, String>>,
+        },
+        /// Events on one calendar, hidden or not.
+        EventsIn {
+            key: String,
+            from: NaiveDate,
+            to: NaiveDate,
+            reply: Sender<Vec<EventInfo>>,
+        },
+        MakeCalendar {
+            title: String,
+            reply: Sender<Result<CalendarInfo, String>>,
+        },
+        Create {
+            key: String,
+            title: String,
+            start: NaiveDateTime,
+            end: NaiveDateTime,
+            reply: Sender<Result<EventInfo, String>>,
+        },
+        Delete {
+            id: String,
+            at: NaiveDateTime,
+            key: String,
+            reply: Sender<Result<(), String>>,
         },
         /// Access was just granted or changed: start over with a new store.
         Reset,
@@ -248,6 +334,29 @@ mod macos {
                             reply,
                         } => {
                             let _ = reply.send(worker.move_event(&id, at, start, end, everyone));
+                        }
+                        Request::EventsIn {
+                            key,
+                            from,
+                            to,
+                            reply,
+                        } => {
+                            let _ = reply.send(worker.events_in(&key, from, to));
+                        }
+                        Request::MakeCalendar { title, reply } => {
+                            let _ = reply.send(worker.make_calendar(&title));
+                        }
+                        Request::Create {
+                            key,
+                            title,
+                            start,
+                            end,
+                            reply,
+                        } => {
+                            let _ = reply.send(worker.create_event(&key, &title, start, end));
+                        }
+                        Request::Delete { id, at, key, reply } => {
+                            let _ = reply.send(worker.delete_event(&id, at, &key));
                         }
                         Request::Reset => worker.close(),
                     }
@@ -310,6 +419,62 @@ mod macos {
         rx.recv_timeout(WAIT)
             .map_err(|_| "Calendar took too long to answer.".to_string())?
     }
+
+    pub fn events_in(
+        key: String,
+        from: NaiveDate,
+        to: NaiveDate,
+    ) -> Result<Vec<EventInfo>, String> {
+        let (tx, rx) = mpsc::channel();
+        send(Request::EventsIn {
+            key,
+            from,
+            to,
+            reply: tx,
+        })?;
+        rx.recv_timeout(WAIT)
+            .map_err(|_| "Calendar took too long to answer.".into())
+    }
+
+    pub fn make_calendar(title: String) -> Result<CalendarInfo, String> {
+        let (tx, rx) = mpsc::channel();
+        send(Request::MakeCalendar { title, reply: tx })?;
+        rx.recv_timeout(WAIT)
+            .map_err(|_| "Calendar took too long to answer.".to_string())?
+    }
+
+    pub fn create_event(
+        key: String,
+        title: String,
+        start: NaiveDateTime,
+        end: NaiveDateTime,
+    ) -> Result<EventInfo, String> {
+        let (tx, rx) = mpsc::channel();
+        send(Request::Create {
+            key,
+            title,
+            start,
+            end,
+            reply: tx,
+        })?;
+        rx.recv_timeout(WAIT)
+            .map_err(|_| "Calendar took too long to answer.".to_string())?
+    }
+
+    pub fn delete_event(id: String, at: NaiveDateTime, key: String) -> Result<(), String> {
+        let (tx, rx) = mpsc::channel();
+        send(Request::Delete {
+            id,
+            at,
+            key,
+            reply: tx,
+        })?;
+        rx.recv_timeout(WAIT)
+            .map_err(|_| "Calendar took too long to answer.".to_string())?
+    }
+
+    /// Asked of the user when Calendar access is missing.
+    const ALLOW: &str = "Allow TodoCity in System Settings → Privacy & Security → Calendars.";
 
     struct Store {
         store: Retained<EKEventStore>,
@@ -403,6 +568,136 @@ mod macos {
     }
 
     impl Worker {
+        fn events_in(&mut self, key: &str, from: NaiveDate, to: NaiveDate) -> Vec<EventInfo> {
+            let Some(store) = self.store() else {
+                return Vec::new();
+            };
+            let Some(cal) = all(store).into_iter().find(|c| info(c).key == key) else {
+                return Vec::new();
+            };
+            let calendars = NSArray::from_retained_slice(&[cal]);
+            let start = NSDate::dateWithTimeIntervalSince1970(midnight(from));
+            let end =
+                NSDate::dateWithTimeIntervalSince1970(midnight(to + chrono::Duration::days(1)));
+            let found = unsafe {
+                let predicate = store.predicateForEventsWithStartDate_endDate_calendars(
+                    &start,
+                    &end,
+                    Some(&calendars),
+                );
+                store.eventsMatchingPredicate(&predicate)
+            };
+            let mut out: Vec<EventInfo> = found.to_vec().iter().map(|e| event_info(e)).collect();
+            out.sort_by(|a, b| a.start.cmp(&b.start));
+            out.dedup_by(|a, b| a.id == b.id && a.start == b.start);
+            out
+        }
+
+        fn make_calendar(&mut self, title: &str) -> Result<CalendarInfo, String> {
+            let Some(store) = self.store() else {
+                return Err(ALLOW.into());
+            };
+            unsafe {
+                let mut sources: Vec<Retained<objc2_event_kit::EKSource>> = store
+                    .sources()
+                    .to_vec()
+                    .into_iter()
+                    .filter(|s| s.sourceType() == EKSourceType::Local)
+                    .collect();
+                if let Some(src) = store.defaultCalendarForNewEvents().and_then(|c| c.source()) {
+                    sources.push(src);
+                }
+                // One already there: use it.
+                for src in &sources {
+                    let sid = src.sourceIdentifier().to_string();
+                    if let Some(c) = all(store).into_iter().find(|c| {
+                        c.title().to_string() == title
+                            && c.source().map(|s| s.sourceIdentifier().to_string())
+                                == Some(sid.clone())
+                    }) {
+                        return Ok(info(&c));
+                    }
+                }
+                let mut last =
+                    String::from("Add a calendar account in the Calendar app, then try again.");
+                for src in &sources {
+                    let cal =
+                        EKCalendar::calendarForEntityType_eventStore(EKEntityType::Event, store);
+                    cal.setTitle(&NSString::from_str(title));
+                    cal.setSource(Some(src));
+                    match store.saveCalendar_commit_error(&cal, true) {
+                        Ok(()) => return Ok(info(&cal)),
+                        Err(e) => last = e.localizedDescription().to_string(),
+                    }
+                }
+                Err(last)
+            }
+        }
+
+        fn create_event(
+            &mut self,
+            key: &str,
+            title: &str,
+            start: NaiveDateTime,
+            end: NaiveDateTime,
+        ) -> Result<EventInfo, String> {
+            let Some(store) = self.store() else {
+                return Err(ALLOW.into());
+            };
+            let cal = all(store)
+                .into_iter()
+                .find(|c| info(c).key == key)
+                .ok_or("Choose a Focus calendar in Settings → Focus Blocks.")?;
+            unsafe {
+                let e = EKEvent::eventWithEventStore(store);
+                e.setCalendar(Some(&cal));
+                e.setTitle(Some(&NSString::from_str(title)));
+                e.setStartDate(Some(&date(start)));
+                e.setEndDate(Some(&date(end)));
+                store
+                    .saveEvent_span_commit_error(&e, EKSpan::ThisEvent, true)
+                    .map_err(|e| e.localizedDescription().to_string())?;
+                Ok(event_info(&e))
+            }
+        }
+
+        fn delete_event(&mut self, id: &str, at: NaiveDateTime, key: &str) -> Result<(), String> {
+            let Some(store) = self.store() else {
+                return Err(ALLOW.into());
+            };
+            let Some(event) = occurrence(store, id, at) else {
+                // Already gone.
+                return Ok(());
+            };
+            let on_calendar = unsafe { event.calendar() }.is_some_and(|c| info(&c).key == key);
+            if !on_calendar {
+                return Err("Only focus blocks can be deleted from here.".into());
+            }
+            unsafe {
+                store
+                    .removeEvent_span_commit_error(&event, EKSpan::ThisEvent, true)
+                    .map_err(|e| e.localizedDescription().to_string())
+            }
+        }
+    }
+
+    /// The occurrence of event `id` that starts at `at` (to the minute).
+    fn occurrence(store: &EKEventStore, id: &str, at: NaiveDateTime) -> Option<Retained<EKEvent>> {
+        let from = date(at - chrono::Duration::days(1));
+        let to = date(at + chrono::Duration::days(1));
+        let want = at.format("%Y-%m-%dT%H:%M").to_string();
+        let found = unsafe {
+            let predicate =
+                store.predicateForEventsWithStartDate_endDate_calendars(&from, &to, None);
+            store.eventsMatchingPredicate(&predicate)
+        };
+        found.to_vec().into_iter().find(|e| unsafe {
+            e.eventIdentifier().is_some_and(|s| s.to_string() == id)
+                && local(e.startDate().timeIntervalSince1970()).starts_with(&want)
+        })
+    }
+
+    impl Worker {
         /// The occurrence of `id` that starts at `at` (to the minute), moved
         /// to `start`..`end` and saved for this occurrence only.
         fn move_event(
@@ -482,6 +777,8 @@ mod macos {
                     .as_ref()
                     .map(|c| c.title().to_string())
                     .unwrap_or_default(),
+                calendar_key: cal.as_ref().map(|c| info(c).key).unwrap_or_default(),
+                focus: false,
                 color: cal.as_ref().and_then(|c| hex(c)),
                 movable: movable(facts(e)),
                 account: cal.as_ref().and_then(|c| c.source()).and_then(|src| {

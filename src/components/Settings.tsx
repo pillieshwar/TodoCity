@@ -3,6 +3,7 @@ import { activeMode } from "../lib/modes";
 import type { AppSettings, Status, UpdateStatus } from "../lib/types";
 import type { ShortcutSettings } from "../lib/shortcuts";
 import { ConnectorsTab } from "./ConnectorsTab";
+import { FocusSection } from "./FocusSection";
 import { AgentsPage } from "./AgentsSection";
 import { WatchSection } from "./WatchSection";
 import { safeLocale } from "../lib/locale";
@@ -19,6 +20,7 @@ export type SettingsPage =
   | "notifications"
   | "capture"
   | "modes"
+  | "focus"
   | "city"
   | "sync"
   | "connectors"
@@ -49,6 +51,7 @@ export const PAGE_GROUPS: { label: string; pages: PageInfo[] }[] = [
     label: "Tasks",
     pages: [
       { id: "modes", label: "Modes", icon: "modes" },
+      { id: "focus", label: "Focus Blocks", icon: "target" },
       { id: "city", label: "Your city", icon: "city" },
     ],
   },
@@ -185,6 +188,7 @@ export function SettingsContent({
       {page === "notifications" && <NotificationsPage {...props} />}
       {page === "capture" && <CapturePage {...props} shortcuts={<ShortcutEditor shortcuts={shortcuts} onShortcuts={onShortcuts} />} />}
       {page === "modes" && <ModesSection {...props} />}
+      {page === "focus" && <FocusSection />}
       {page === "city" && <CityPage {...props} />}
       {page === "sync" && <SyncPage />}
       {page === "connectors" && <ConnectorsTab onDone={onDone} />}

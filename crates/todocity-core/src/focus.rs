@@ -464,7 +464,7 @@ mod tests {
     #[test]
     fn a_block_added_onto_the_running_one_extends_it() {
         let a = block("a", (9, 0), (10, 0));
-        let mut st = plan(&State::default(), &[a.clone()], at(9, 0)).state;
+        let mut st = plan(&State::default(), std::slice::from_ref(&a), at(9, 0)).state;
         let later = [a, block("b", (10, 0), (10, 30))];
         let s = plan(&st, &later, at(9, 20));
         assert_eq!(s.action, Action::On { until: at(10, 30) });

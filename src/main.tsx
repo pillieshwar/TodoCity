@@ -8,6 +8,7 @@ import { applyTheme, cachedTheme } from "./lib/theme";
 import { setDoneSound } from "./lib/doneSound";
 import { pageDrawn } from "./lib/pageCheck";
 import { ViewBoundary } from "./components/ViewBoundary";
+import { TitleTips } from "./components/TitleTips";
 import Popover from "./popover/Popover";
 import QuickAdd from "./quick/QuickAdd";
 import "./styles.css";
@@ -65,5 +66,6 @@ if (view === "popover") {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ViewBoundary view={view}>{view === "popover" ? <Popover /> : view === "quick" ? <QuickAdd /> : <App />}</ViewBoundary>
+    <TitleTips />
   </React.StrictMode>,
 );

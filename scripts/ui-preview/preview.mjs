@@ -585,7 +585,8 @@ async function shot(name, size, s, steps = async () => {}, dark = false) {
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   try {
-    await page.emulateMedia({ colorScheme: dark ? "dark" : "light", reducedMotion: "reduce" });
+    // Shots run with Reduce motion on, so they're stable; `motion: true` checks the motion itself.
+    await page.emulateMedia({ colorScheme: dark ? "dark" : "light", reducedMotion: s.motion ? "no-preference" : "reduce" });
     await page.addInitScript(mockTauri, { ...s, shortcuts: SHORTCUTS });
     await page.goto(`${base}/?view=${s.label}`);
     await page.waitForTimeout(400);
@@ -1906,6 +1907,99 @@ await shot("full-project-building", FULL, full({ settings: DARK }), async (p) =>
 await shot("full-building-floors", FULL, full({ settings: DARK }), async (p) => {
   await side(/Offsite 2026/)(p);
   await p.getByRole("button", { name: "Show Q4 launch's sections" }).click();
+});
+// ── v0.4.81: motion and finish ─────────────────────────────────────────────
+const MOTION = (o = {}) => full({ settings: LIGHT, motion: true, ...o });
+await shot("motion-sidebar-slide", FULL, MOTION(), async (p) => {
+  const chev = p.getByRole("button", { name: "Show Q4 launch's sections" });
+  await chev.click();
+  // Mid-slide: the sections are on their way, not all there yet.
+  await p.waitForTimeout(70);
+  const box = p.locator(".sb-building", { hasText: "Q4 launch" }).locator(".collapse");
+  const mid = await box.evaluate((e) => ({ h: e.getBoundingClientRect().height, full: e.firstElementChild.scrollHeight, o: Number(getComputedStyle(e).opacity) }));
+  if (!(mid.h < mid.full - 2 && mid.o < 1)) throw new Error(`the sections didn't slide open: ${JSON.stringify(mid)}`);
+  await p.waitForTimeout(400);
+  const end = await box.evaluate((e) => ({ h: e.getBoundingClientRect().height, full: e.firstElementChild.scrollHeight }));
+  if (Math.abs(end.h - end.full) > 1) throw new Error(`the sections didn't finish opening: ${JSON.stringify(end)}`);
+  // Opened projects are remembered.
+  await p.reload();
+  await p.waitForTimeout(500);
+  if (!(await p.getByRole("button", { name: "Hide Q4 launch's sections" }).count())) throw new Error("Q4 launch's sections weren't remembered open");
+  // Closing slides too, then the sections go.
+  await p.getByRole("button", { name: "Hide Q4 launch's sections" }).click();
+  await p.waitForTimeout(70);
+  if (!(await p.locator(".sb-building", { hasText: "Q4 launch" }).locator(".collapse").count())) throw new Error("the sections vanished instead of sliding closed");
+  await p.waitForTimeout(400);
+  if (await p.locator(".sb-building", { hasText: "Q4 launch" }).locator(".collapse").count()) throw new Error("the closed sections stayed");
+});
+await shot("motion-sidebar-glide", FULL, MOTION(), async (p) => {
+  const glide = p.locator(".sb-nav .sb-glide");
+  const rowY = async (name) => p.locator(".sb-nav .sb-item", { hasText: name }).first().evaluate((e) => e.getBoundingClientRect().top);
+  const glideY = () => glide.evaluate((e) => e.getBoundingClientRect().top);
+  if (Math.abs((await glideY()) - (await rowY("Today"))) > 1) throw new Error("the highlight isn't on Today");
+  const [from, to] = [await rowY("Today"), await rowY("Inbox")];
+  // Watch the highlight every frame while it moves: it must pass between the rows.
+  const seen = p.evaluate(
+    () =>
+      new Promise((done) => {
+        const g = document.querySelector(".sb-nav .sb-glide");
+        const ys = [];
+        const t0 = performance.now();
+        const step = () => {
+          ys.push(g.getBoundingClientRect().top);
+          if (performance.now() - t0 < 900) requestAnimationFrame(step);
+          else done(ys);
+        };
+        requestAnimationFrame(step);
+      }),
+  );
+  await p.locator(".sb-nav .sb-item", { hasText: "Inbox" }).click();
+  const ys = await seen;
+  if (!ys.some((y) => y > from + 2 && y < to - 2)) throw new Error(`the highlight jumped instead of gliding from ${from} to ${to}: ${ys.map(Math.round).join(",")}`);
+  if (Math.abs((await glideY()) - (await rowY("Inbox"))) > 1) throw new Error("the highlight didn't land on Inbox");
+});
+await shot("motion-menu-and-tooltip", FULL, MOTION(), async (p) => {
+  // Menus grow from their button.
+  await side(/Offsite 2026/)(p);
+  await p.locator(".sb-b", { hasText: "Offsite 2026" }).hover();
+  await p.getByRole("button", { name: "More for Offsite 2026" }).click();
+  const anim = await p.locator(".sb-menu").evaluate((e) => getComputedStyle(e).animationName);
+  if (anim !== "menu-in") throw new Error(`the menu doesn't grow in: ${anim}`);
+  await p.locator(".fh-title").click();
+  // Tooltips wait a moment, then show the title; it's back on the button after.
+  const search = p.locator(".sb-search");
+  await search.hover();
+  await p.waitForTimeout(200);
+  if (await p.locator(".tt").count()) throw new Error("the tooltip came straight away");
+  await p.waitForTimeout(600);
+  const tip = await p.locator(".tt").textContent();
+  if (!tip?.startsWith("Search")) throw new Error(`no tooltip: ${tip}`);
+  await p.mouse.move(5, 890);
+  await p.waitForTimeout(100);
+  if ((await search.getAttribute("title")) !== "Search (/ or ⌘K)") throw new Error("the button's title wasn't put back");
+  await search.hover();
+  await p.waitForTimeout(700);
+});
+await shot("motion-toast-undo-line", FULL, MOTION(), async (p) => {
+  await p.locator(".task .check").first().click();
+  const toast = p.locator(".toast", { hasText: "Completed" });
+  await toast.waitFor();
+  if (!(await toast.locator(".toast-timer").count())) throw new Error("no undo line on the toast");
+  await p.waitForTimeout(1200);
+  await toast.getByRole("button", { name: "Dismiss" }).click();
+  await p.waitForTimeout(40);
+  if (!(await p.locator(".toast.leaving").count())) throw new Error("the toast vanished instead of fading out");
+  await p.waitForTimeout(400);
+  if (await p.locator(".toast", { hasText: "Completed" }).count()) throw new Error("the toast stayed");
+  await p.locator(".task .check").first().click();
+  await toast.waitFor();
+  await p.waitForTimeout(900);
+});
+// With Reduce motion on (every other shot), nothing slides: sections are there at once.
+await shot("reduce-motion-instant", FULL, full({ settings: LIGHT }), async (p) => {
+  await p.getByRole("button", { name: "Show Q4 launch's sections" }).click();
+  const h = await p.locator(".sb-building", { hasText: "Q4 launch" }).locator(".collapse").evaluate((e) => [e.getBoundingClientRect().height, e.firstElementChild.scrollHeight]);
+  if (Math.abs(h[0] - h[1]) > 1) throw new Error(`sections slid with Reduce motion on: ${h}`);
 });
 await shot("full-add-room", FULL, full({ settings: DARK }), async (p) => {
   await side(/Offsite 2026/)(p);

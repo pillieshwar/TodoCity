@@ -11,6 +11,7 @@ import { AgentRunCard, AgentRunPill, AgentRuns, DelegateButton, useAgentRun } fr
 import { AgentMark, useIsAgentTask } from "./WhoSwitch";
 import { endOf } from "../lib/timeblock";
 import { LineIcon } from "./LineIcon";
+import { useFlip } from "../lib/useMotion";
 import { TaskFields, type FieldMenu, type FieldValues } from "./TaskFields";
 import { deadlineChip } from "../lib/lists";
 import { dueChip } from "../lib/due";
@@ -85,6 +86,9 @@ interface Props {
 
 export function TaskList(props: Props) {
   const { groups, shortcut, quickShortcut, filtered, focusToday, actions, today, emptyNote } = props;
+  // Rows glide to their new place, and a new task arrives softly.
+  const groupsRef = useRef<HTMLDivElement>(null);
+  useFlip(groupsRef, { greet: true, paused: !!props.drag?.drag });
   if (!groups.length && emptyNote) return <div className="empty">{emptyNote}</div>;
   if (!groups.length && focusToday && !filtered) {
     return (
@@ -121,7 +125,7 @@ export function TaskList(props: Props) {
     );
   }
   return (
-    <div className={props.openId !== null && !props.detail ? "groups has-open" : "groups"}>
+    <div className={props.openId !== null && !props.detail ? "groups has-open" : "groups"} ref={groupsRef}>
       {groups.map((g) => {
         // A section of the project being viewed: drop a dragged task here to move it in.
         const section = props.dropProject && g.key.startsWith("h:") ? g.key.slice(2) : null;
@@ -283,6 +287,7 @@ function TaskRow({
   return (
     <li
       ref={ref}
+      data-flip={task.id}
       className={[
         "task",
         open ? "open" : "",

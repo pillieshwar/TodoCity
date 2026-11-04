@@ -1,4 +1,13 @@
 {
+  "0.4.81": [
+    "TodoCity moves more smoothly: projects slide open in the sidebar, the selection glides between lists, and menus grow from their button",
+    "Finish a task and the ones below glide up; new tasks arrive with a soft glow",
+    "Toasts fade out gently, with a thin line showing how long Undo stays",
+    "Hover a button for a moment to see what it does; move along and the next one shows at once",
+    "Opened projects stay open, and each list remembers where you scrolled",
+    "Calendar glides to the current time when it opens",
+    "With Reduce motion on in macOS, everything stays still"
+  ],
   "0.4.80": [
     "Focus Blocks: put a focus block on your calendar and your Mac's Focus turns on when it starts and off when it ends",
     "Make blocks in TodoCity's Calendar (type “Focus” in an hour, or “Focus: draft the brief for 90 min”) or in Apple Calendar",

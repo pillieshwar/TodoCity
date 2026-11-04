@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DUR, reducedMotion } from "../lib/motion";
+import { useFlip } from "../lib/useMotion";
 
 export interface Toast {
   id: number;
@@ -7,6 +9,8 @@ export interface Toast {
   action?: { label: string; run: () => void | Promise<void> };
   /** "done": a finished task, in green with a check. */
   tone?: "info" | "error" | "done";
+  /** On its way out (fading), then removed. */
+  leaving?: boolean;
 }
 
 const LIFETIME = 5500;
@@ -21,17 +25,27 @@ export function useToasts() {
   const timers = useRef(new Map<number, number>());
 
   const dismiss = useCallback((id: number) => {
-    setToasts((ts) => ts.filter((t) => t.id !== id));
     const timer = timers.current.get(id);
     if (timer) window.clearTimeout(timer);
     timers.current.delete(id);
+    if (reducedMotion()) {
+      setToasts((ts) => ts.filter((t) => t.id !== id));
+      return;
+    }
+    // Fade out first, then go.
+    setToasts((ts) => ts.map((t) => (t.id === id ? { ...t, leaving: true } : t)));
+    window.setTimeout(() => setToasts((ts) => ts.filter((t) => t.id !== id)), DUR.open);
   }, []);
 
   const show = useCallback(
     (text: string, action?: Toast["action"], tone: Toast["tone"] = "info") => {
       const id = ++seq.current;
-      // Keep at most three on screen.
-      setToasts((ts) => [...ts.slice(-2), { id, text, action, tone }]);
+      // Keep at most three on screen (ones already leaving don't count).
+      setToasts((ts) => {
+        const staying = ts.filter((t) => !t.leaving);
+        const keep = new Set(staying.slice(-2).map((t) => t.id));
+        return [...ts.filter((t) => t.leaving || keep.has(t.id)), { id, text, action, tone }];
+      });
       timers.current.set(
         id,
         window.setTimeout(() => dismiss(id), LIFETIME),
@@ -45,7 +59,7 @@ export function useToasts() {
   toastsRef.current = toasts;
 
   const undoLast = useCallback(() => {
-    const last = [...toastsRef.current].reverse().find((t) => t.action);
+    const last = [...toastsRef.current].reverse().find((t) => t.action && !t.leaving);
     if (!last?.action) return false;
     dismiss(last.id);
     void last.action.run();
@@ -61,11 +75,18 @@ export function useToasts() {
 }
 
 export function Toasts({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
+  // The stack closes the gap smoothly when one leaves.
+  const box = useRef<HTMLDivElement>(null);
+  useFlip(box);
   if (!toasts.length) return null;
   return (
-    <div className="toasts" role="status" aria-live="polite">
+    <div className="toasts" role="status" aria-live="polite" ref={box}>
       {toasts.map((t) => (
-        <div key={t.id} className={t.tone === "error" ? "toast error" : t.tone === "done" ? "toast done" : "toast"}>
+        <div
+          key={t.id}
+          data-flip={t.id}
+          className={["toast", t.tone === "error" ? "error" : t.tone === "done" ? "done" : "", t.leaving ? "leaving" : ""].filter(Boolean).join(" ")}
+        >
           {t.tone === "done" && (
             <span className="toast-check" aria-hidden>
               <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
@@ -89,6 +110,8 @@ export function Toasts({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id:
           <button type="button" className="toast-close" aria-label="Dismiss" onClick={() => onDismiss(t.id)}>
             ×
           </button>
+          {/* How long Undo stays: a line that runs down. */}
+          {t.action && !t.leaving && <span className="toast-timer" style={{ animationDuration: `${LIFETIME}ms` }} aria-hidden />}
         </div>
       ))}
     </div>

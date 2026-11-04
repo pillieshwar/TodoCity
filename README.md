@@ -114,7 +114,7 @@ Prefer a clean screen? Make the city card small, or hide it in **Settings → Yo
 - **Or a shortcut.** Select text and press <kbd>⇧⌘S</kbd> (change it in Settings → Capture & shortcuts) — no copying at all. Or right-click → **Add to TodoCity**.
 - **Dates done right.** "by Friday 3pm", "every Monday", "tomorrow evening" become a real day, time and repeat — and "by Friday" becomes a **deadline**. When a phrase is ambiguous, TodoCity asks instead of guessing.
 - **Lists become sub-tasks.** Capture a bulleted list and it turns into a checklist.
-- **Back to the source.** Each task remembers where it came from — the Slack thread, the email, the web page — and opens it in one click.
+- **Back to the source.** Each task shows where it came from as that app's or site's logo (Slack, Gmail, Outlook, GitHub, Todoist, Claude…) and opens the thread, email or page in one click. Hover the logo for its name.
 
 <br clear="right">
 
@@ -138,7 +138,7 @@ Anything whose day, time or deadline has passed gathers in **Overdue** in the si
 
 <img src="docs/screenshots/week.png" alt="Seven days as a calendar with tasks and events, and tasks with no date beside it" width="860">
 
-**Calendar** shows the next seven days, every hour of the day, filling the window — your tasks beside your calendar events, each at its real start and length. Drag tasks between days and times (they snap to 5 minutes), drag a task's bottom edge to change how long it takes, click anywhere in an hour to add one there, and drag tasks with no date onto the week to plan them. Your own meetings move the same way: drag one to a new time or day (or stretch it) and it moves in Calendar too, with Undo. A meeting you organize asks first, since your guests get the new time; invites from other people stay as they are.
+**Calendar** shows the next seven days, every hour of the day, filling the window — your tasks beside your calendar events, each at its real start and length. Drag tasks between days and times (they snap to 5 minutes), drag a task's bottom edge to change how long it takes, click anywhere in an hour to add one there, and drag tasks with no date onto the week to plan them. Your own meetings move the same way: drag one to a new time or day (or stretch it) and it moves in Calendar too, with Undo. A meeting you organize asks first, since your guests get the new time; invites from other people stay as they are. Tasks from other apps carry that app's logo in their corner, and meetings show their account: Google Calendar or Outlook.
 
 **Any time, any length.** Start a task at any minute (9:07) and give it any length: the **Length** chip has quick picks, or type any number of minutes (7, 45, 1h30). Typing "for 30 min" in a new task sets it too.
 
@@ -408,6 +408,7 @@ Built with [Tauri 2](https://tauri.app), Rust, React and TypeScript, [llama.cpp]
 | No reminders appear | **Settings → Notifications** shows whether they're allowed and can send a test notification. |
 | Accessibility is asked for again after an update | In **Privacy & Security → Accessibility**, remove TodoCity with **–**, then capture again and re-allow it. |
 | The menu-bar icon is somewhere you don't want it | Hold **⌘** and drag it. macOS remembers the spot, including across updates. TodoCity starts next to the battery, but never moves the icon again after that. |
+| A view shows **Reload to see your tasks** | Click **Reload**. If it comes back, the log (below) has the details: attach it to an [issue](https://github.com/pillieshwar/TodoCity/issues). |
 | Something else | **Settings → Help → Log file** opens TodoCity's log. It stays on your Mac — attach it to an [issue](https://github.com/pillieshwar/TodoCity/issues). |
 
 ## Uninstall

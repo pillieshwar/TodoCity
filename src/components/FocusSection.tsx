@@ -109,9 +109,11 @@ export function FocusSection() {
             <strong>Focus calendar</strong>
             {status.calendar_access !== "full" ? " · Allow TodoCity to use Calendar first." : status.calendar ? ` · ${status.calendar}` : " · Make one, or pick a calendar below."}
           </span>
-          <button type="button" className="ghost small" disabled={busy} onClick={() => void run(api.focusMakeCalendar)}>
-            {status.calendar ? "Use a new Focus calendar" : "Make a Focus calendar"}
-          </button>
+          {!status.calendar && (
+            <button type="button" className="ghost small" disabled={busy} onClick={() => void run(api.focusMakeCalendar)}>
+              Make a Focus calendar
+            </button>
+          )}
         </div>
         {status.calendar_access === "full" && calendars.length > 0 && (
           <label className="toggle-row">
@@ -128,6 +130,7 @@ export function FocusSection() {
               aria-label="Calendar for focus blocks"
             >
               {!status.calendar && <option value="">Choose…</option>}
+              {status.calendar && !calendars.some((c) => c.key === status.calendar) && <option value={status.calendar}>{status.calendar}</option>}
               {calendars.map((c) => (
                 <option key={c.key} value={c.key}>
                   {c.key}

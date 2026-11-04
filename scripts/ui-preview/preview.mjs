@@ -2652,7 +2652,7 @@ const FOCUS_DONE = {
   ...FOCUS_BASE,
   last: { title: "Deep work", start: localStamp(-60), end: localStamp(-10), keys: ["f1@y"], tasks: FOCUS_TASKS.map((t) => t.id), reason: "completed", at: localStamp(-10) },
 };
-const FOCUS_EVENT = { id: "f1", title: "Deep work", start: `${day(0)}T09:00:00`, end: `${day(0)}T11:00:00`, all_day: false, calendar: "Focus", calendar_key: "On My Mac / Focus", color: "#5249d9", focus: true };
+const FOCUS_EVENT = { id: "f1", title: "Deep work", start: localStamp(-16), end: localStamp(34), all_day: false, calendar: "Focus", calendar_key: "On My Mac / Focus", color: "#5249d9", focus: true };
 await shot("panel-focus-on", PANEL, scenario({ focus: FOCUS_ON }), async (p) => {
   if (!(await p.locator(".focus-now.on", { hasText: "Focus is on until" }).count())) throw new Error("the running block isn't shown");
   await p.getByRole("button", { name: "+15 min" }).first().click();

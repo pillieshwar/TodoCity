@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { DropTarget } from "./plan";
 import type { Task } from "./types";
-import { snapMinute } from "./timeblock";
+import { snapMinute, startFromTop } from "./timeblock";
 import { markDragged } from "./hints";
 
 export interface DragState {
@@ -10,6 +10,8 @@ export interface DragState {
   y: number;
   /** What's under the pointer, if it's somewhere a task can go. */
   over: DropTarget | null;
+  /** A Calendar block: how far below its top edge it was picked up (px). */
+  grabY?: number;
 }
 
 /**
@@ -17,7 +19,7 @@ export interface DragState {
  * or a place from `data-drop-project` (+ optional `data-drop-floor`: a
  * floor's name, "" for the ground floor).
  */
-function targetAt(x: number, y: number): DropTarget | null {
+function targetAt(x: number, y: number, grabY?: number): DropTarget | null {
   const el = document.elementFromPoint(x, y) as HTMLElement | null;
   const pl = el?.closest<HTMLElement>("[data-drop-project]");
   if (pl?.dataset.dropProject) {
@@ -30,10 +32,17 @@ function targetAt(x: number, y: number): DropTarget | null {
   const h = t.dataset.hour;
   if (h === undefined) return { iso: t.dataset.iso };
   if (h === "any") return { iso: t.dataset.iso, hour: null };
-  // An hour that takes minutes (the Calendar): where in it, snapped to 5.
+  // An hour that takes minutes: where in it, snapped (the Calendar's hours
+  // say how finely with `data-snap`). A block picked up from the Calendar
+  // starts where its top edge is, so it lands where it's drawn.
   if (t.dataset.minutes !== undefined) {
     const r = t.getBoundingClientRect();
-    return { iso: t.dataset.iso, hour: Number(h), minute: snapMinute((y - r.top) / r.height) };
+    const step = Number(t.dataset.snap) || undefined;
+    if (grabY !== undefined) {
+      const at = startFromTop(Number(h), (y - grabY - r.top) / r.height, step);
+      return { iso: t.dataset.iso, hour: Math.floor(at / 60), minute: at % 60 };
+    }
+    return { iso: t.dataset.iso, hour: Number(h), minute: snapMinute((y - r.top) / r.height, step) };
   }
   return { iso: t.dataset.iso, hour: Number(h) };
 }
@@ -67,16 +76,17 @@ function autoScroll(x: number, y: number) {
  */
 export function useTaskDrag(onDrop: (task: Task, to: DropTarget) => void) {
   const [drag, setDrag] = useState<DragState | null>(null);
-  const pressed = useRef<{ task: Task; x: number; y: number } | null>(null);
+  const pressed = useRef<{ task: Task; x: number; y: number; grabY?: number } | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const moved = useRef(false);
   const dropRef = useRef(onDrop);
   dropRef.current = onDrop;
 
-  const start = useCallback((e: ReactPointerEvent, task: Task) => {
+  /** `grabY`: for a Calendar block, the pointer's distance below its top edge. */
+  const start = useCallback((e: ReactPointerEvent, task: Task, opts: { grabY?: number } = {}) => {
     if (e.button !== 0 || task.done) return;
     if ((e.target as HTMLElement).closest("[data-nodrag], input, textarea, a")) return;
-    pressed.current = { task, x: e.clientX, y: e.clientY };
+    pressed.current = { task, x: e.clientX, y: e.clientY, grabY: opts.grabY };
     moved.current = false;
   }, []);
 
@@ -87,7 +97,7 @@ export function useTaskDrag(onDrop: (task: Task, to: DropTarget) => void) {
       if (!p) return;
       if (!moved.current && Math.hypot(e.clientX - p.x, e.clientY - p.y) < 6) return;
       moved.current = true;
-      dragRef.current = { task: p.task, x: e.clientX, y: e.clientY, over: targetAt(e.clientX, e.clientY) };
+      dragRef.current = { task: p.task, x: e.clientX, y: e.clientY, over: targetAt(e.clientX, e.clientY, p.grabY), grabY: p.grabY };
       setDrag(dragRef.current);
       if (!timer) {
         timer = window.setInterval(() => {
@@ -95,7 +105,7 @@ export function useTaskDrag(onDrop: (task: Task, to: DropTarget) => void) {
           if (!d) return;
           autoScroll(d.x, d.y);
           // What's under the pointer changes as the box scrolls.
-          const over = targetAt(d.x, d.y);
+          const over = targetAt(d.x, d.y, d.grabY);
           if (!sameTarget(over, d.over)) {
             dragRef.current = { ...d, over };
             setDrag(dragRef.current);

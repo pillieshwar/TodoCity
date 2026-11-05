@@ -13,10 +13,32 @@ import type { TaskActions } from "../lib/taskActions";
 import type { TaskDrag } from "../lib/useTaskDrag";
 import type { CalendarEvent, NewTask, Task } from "../lib/types";
 import { daysForDrag, isSideways, swipeDays } from "../lib/weekSlide";
-import { DEFAULT_BLOCK_MIN, MIN_BLOCK_PX, SNAP_MIN, blockFit, drawnLen, durationLabel, endOf, foldBlocks, layoutBlocks, minutesOf, takeDuration, timeOf } from "../lib/timeblock";
+import {
+  CALENDAR_NEW_MIN,
+  CAL_SNAP_MIN,
+  DEFAULT_BLOCK_MIN,
+  MIN_BLOCK_PX,
+  drawnLen,
+  durationLabel,
+  endOf,
+  foldBlocks,
+  halfHourAt,
+  layoutBlocks,
+  minutesOf,
+  takeDuration,
+  timeOf,
+  titleLines,
+} from "../lib/timeblock";
+import { EVENT_FALLBACK, inkOn } from "../lib/blockColor";
 
 /** One hour of the Calendar, in pixels (matches `--wg-hour` in styles.css). */
-const HOUR_PX = 52;
+const HOUR_PX = 72;
+
+/** A block filled with its color, and the text color that reads on it. */
+function fill(color: string | null | undefined, fallback?: string): CSSProperties {
+  const c = color || fallback;
+  return (c ? { "--fill": c, "--on": inkOn(c) } : { "--fill": "var(--teal)", "--on": "var(--on-teal)" }) as CSSProperties;
+}
 /** Any time shows this many a day before "+N more". */
 const ANY_SHOWN = 2;
 import { NewTaskField } from "./DayPlan";
@@ -37,8 +59,6 @@ interface Props {
   openId: number | null;
   /** Slide the week by whole days (drag the dates, or swipe sideways). */
   onSlide?: (days: number) => void;
-  /** "Moved Design review to 10:30", with Undo. */
-  onToast?: (text: string, action?: { label: string; run: () => void }) => void;
   onError?: (text: string) => void;
 }
 
@@ -56,7 +76,7 @@ type AddAt = { iso: string; hour: number | "any"; minute?: number } | null;
  * hour of their time beside calendar events; untimed ones in Any time. Drag
  * a task to another day or hour, click an empty hour to add one there.
  */
-export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd, onOpen, openId, onSlide, onToast, onError }: Props) {
+export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd, onOpen, openId, onSlide, onError }: Props) {
   const colors = useProjectColors();
   const days = sevenDays(day);
   const from = days[0];
@@ -74,6 +94,8 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
   const peekTimer = useRef(0);
   const peekOn = (t: Task, el: HTMLElement) => {
     window.clearTimeout(peekTimer.current);
+    // Its details are open beside it already.
+    if (openId === t.id) return;
     peekTimer.current = window.setTimeout(() => {
       const r = el.getBoundingClientRect();
       const below = r.bottom + 120 < window.innerHeight;
@@ -148,16 +170,12 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
     setEvents((es) => es.map((e) => (occurrenceKey(e) === occurrenceKey(from) ? to : e)));
   const moveLabel = (e: CalendarEvent) =>
     `${e.start.slice(0, 10) === today ? "" : `${weekdayLong.format(parseISODate(e.start.slice(0, 10)))} `}${timeLabel(e.start.slice(11, 16), locale)}`;
-  /** Save a meeting's new time in Calendar; Undo puts it back. */
-  const saveMove = (from: CalendarEvent, to: CalendarEvent, undoable = true) => {
+  /** Save a meeting's new time in Calendar. The block itself shows the move: no toast. */
+  const saveMove = (from: CalendarEvent, to: CalendarEvent) => {
     replaceEvent(from, to);
     void api
       .calendarMoveEvent({ id: from.id, at: from.start, start: to.start, end: to.end, everyone: from.movable === "everyone" })
-      .then((saved) => {
-        replaceEvent(to, saved);
-        if (undoable)
-          onToast?.(`Moved “${from.title || "Busy"}” to ${moveLabel(saved)}`, { label: "Undo", run: () => saveMove(saved, from, false) });
-      })
+      .then((saved) => replaceEvent(to, saved))
       .catch((err) => {
         replaceEvent(to, from);
         onError?.(String(err));
@@ -273,7 +291,8 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
         ]
           .filter(Boolean)
           .join(" ")}
-        style={t.project && colors[t.project] ? ({ "--pc": colors[t.project] } as CSSProperties) : undefined}
+        style={fill(t.project ? colors[t.project] : null)}
+        data-block-id={t.id}
         onPointerDown={(e) => drag.start(e, t)}
       >
         <button type="button" className="plan-check" data-nodrag onClick={() => complete(t)} aria-label={`Mark “${t.title}” done`}>
@@ -291,19 +310,22 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
     );
   };
 
-  /** A task at its real time and length in the hours; its label fits its height. */
+  /**
+   * A task at its real time and length in the hours, filled with its
+   * project's color. Only the title shows (its place says the time); it
+   * wraps over as many lines as fit.
+   */
   const taskBlock = (t: Task, iso: string, top: number, height: number, left: string, width: string) => {
-    const end = endOf(t.due_time!, t.duration);
+    const end = endOf(t.due_time!, t.duration ?? DEFAULT_BLOCK_MIN);
     const span = `${timeLabel(t.due_time!, locale)}${end ? ` – ${timeLabel(end, locale)}` : ""}`;
-    const fit = blockFit(height);
+    const lines = titleLines(height);
     return (
       <div
         key={t.id}
         className={[
           "wg-task",
           "wg-block",
-          `fit-${fit}`,
-          fit === "line" ? "tiny" : "",
+          lines === 1 ? "tiny" : "",
           t.deadline && t.deadline <= iso ? "deadline" : "",
           completing.has(t.id) ? "completing" : "",
           openId === t.id ? "picked" : "",
@@ -312,10 +334,12 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
         ]
           .filter(Boolean)
           .join(" ")}
-        style={{ top, height, left, width, ...(t.project && colors[t.project] ? { "--pc": colors[t.project] } : {}) } as CSSProperties}
+        style={{ top, height, left, width, "--lines": lines, ...fill(t.project ? colors[t.project] : null) } as CSSProperties}
+        data-block-id={t.id}
         onPointerDown={(e) => {
           peekOff();
-          drag.start(e, t);
+          // Picked up where it was grabbed, so it lands where it's drawn.
+          drag.start(e, t, { grabY: e.clientY - e.currentTarget.getBoundingClientRect().top });
         }}
         onMouseEnter={(e) => peekOn(t, e.currentTarget)}
         onMouseLeave={peekOff}
@@ -331,18 +355,7 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
           onClick={() => !drag.wasDrag() && onOpen(t)}
           aria-label={`${t.title}, ${span}${t.duration ? `, ${durationLabel(t.duration)}` : ""}`}
         >
-          {fit === "line" ? (
-            // One line: the title fades out, the time shows if there's room.
-            <>
-              <span className="wg-t">{t.title}</span>
-              <span className="wg-at">{timeLabel(t.due_time!, locale)}</span>
-            </>
-          ) : (
-            <>
-              <span className="wg-t">{t.title}</span>
-              <span className="wg-span">{span}</span>
-            </>
-          )}
+          <span className="wg-t">{t.title}</span>
         </button>
         <SourceBadge task={t} />
         <span
@@ -359,7 +372,7 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
             if (!resizing || resizing.id !== t.id) return;
             const raw = resizing.from + ((e.clientY - resizing.y) / HOUR_PX) * 60;
             const max = 24 * 60 - minutesOf(t.due_time!);
-            const to = Math.max(SNAP_MIN, Math.min(max, Math.round(raw / SNAP_MIN) * SNAP_MIN));
+            const to = Math.max(CAL_SNAP_MIN, Math.min(max, Math.round(raw / CAL_SNAP_MIN) * CAL_SNAP_MIN));
             if (to !== resizing.to) setResizing({ ...resizing, to });
           }}
           onPointerUp={() => {
@@ -380,13 +393,13 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
     return (
       <div
         key={occurrenceKey(e)}
-        className={["wg-event", "wg-block", e.focus ? "focus-block" : "", height < 34 ? "tiny" : "", movable ? "movable" : "", lifted ? "lifted" : ""].filter(Boolean).join(" ")}
-        style={{ top, height, left, width, "--ev": e.color ?? "var(--faint)" } as CSSProperties}
+        className={["wg-event", "wg-block", e.focus ? "focus-block" : "", titleLines(height) === 1 ? "tiny" : "", movable ? "movable" : "", lifted ? "lifted" : ""].filter(Boolean).join(" ")}
+        style={{ top, height, left, width, "--ev": e.color ?? EVENT_FALLBACK, "--lines": titleLines(height), ...fill(e.color, EVENT_FALLBACK) } as CSSProperties}
         title={`${e.title || "Busy"} · ${span} · ${e.focus ? "Focus block — Focus turns on when it starts" : e.calendar}${movable ? (e.movable === "everyone" ? "\nDrag to move it for everyone" : "\nDrag to move it") : ""}`}
         onPointerDown={movable ? (ev) => startEvDrag(ev, e, "move") : undefined}
       >
         <span className="wg-event-title">{e.title || "Busy"}</span>
-        {(height >= 34 || lifted) && <span className="wg-event-time">{span}</span>}
+        {lifted && <span className="wg-event-time">{span}</span>}
         {e.focus ? (
           <span className="focus-badge" aria-label="Focus block" />
         ) : (
@@ -425,6 +438,30 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
       const w = 100 / p.cols;
       return [it.draw(top, height, `calc(${p.col * w}% + 3px)`, `calc(${w}% - 6px)`)];
     });
+    // A task being dragged: a copy, the same size, where it will land.
+    const d = drag.drag;
+    const lands = d?.over;
+    if (d && lands?.iso === iso && typeof lands.hour === "number" && lands.minute !== undefined) {
+      const start = lands.hour * 60 + lands.minute;
+      const len = Math.min(d.task.duration ?? (d.task.due_time ? DEFAULT_BLOCK_MIN : CALENDAR_NEW_MIN), 24 * 60 - start);
+      const h = Math.max((len / 60) * HOUR_PX - 2, MIN_BLOCK_PX);
+      const at = timeOf(start);
+      drawn.push(
+        <div
+          key="shadow"
+          className={titleLines(h) === 1 ? "wg-task wg-block wg-shadow tiny" : "wg-task wg-block wg-shadow"}
+          style={{ top: (start / 60) * HOUR_PX + 1, height: h, left: 3, right: 3, ...fill(d.task.project ? colors[d.task.project] : null) } as CSSProperties}
+          aria-hidden
+        >
+          <span className="wg-title">
+            <span className="wg-t">{d.task.title}</span>
+            <span className="wg-span">
+              {timeLabel(at, locale)} – {timeLabel(endOf(at, len)!, locale)}
+            </span>
+          </span>
+        </div>,
+      );
+    }
     // A crowded hour: the rest as "+N", which opens the first of them.
     for (const f of folds) {
       const hidden = f.keys.flatMap((k) => tasksAt.filter((t) => `t${t.id}` === k));
@@ -459,7 +496,7 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
       <div
         key={`${e.id}${e.start}`}
         className="wg-event"
-        style={{ "--ev": e.color ?? "var(--faint)" } as CSSProperties}
+        style={{ "--ev": e.color ?? EVENT_FALLBACK, ...fill(e.color, EVENT_FALLBACK) } as CSSProperties}
         title={`${e.title || "Busy"}${at ? ` · ${at}` : ""} · ${e.calendar}`}
       >
         <span className="wg-event-title">{e.title || "Busy"}</span>
@@ -490,7 +527,8 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
             title,
             due_date: iso,
             due_time: at,
-            duration: at === null ? null : minutes,
+            // An hour long unless it says otherwise, as in Outlook.
+            duration: at === null ? null : (minutes ?? CALENDAR_NEW_MIN),
             source_text: null,
           });
         }}
@@ -612,28 +650,26 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
               {cols.map(({ iso }) => {
                 const isToday = iso === today;
                 const past = iso < today || (isToday && h < nowHour);
-                const dropHere = over?.iso === iso && over.hour === h;
                 return (
                   <div
                     key={iso}
-                    className={["wg-cell", isToday ? "today" : "", past ? "past" : "", dropHere ? "drop" : ""].filter(Boolean).join(" ")}
+                    className={["wg-cell", isToday ? "today" : "", past ? "past" : ""].filter(Boolean).join(" ")}
                     data-iso={iso}
                     data-hour={h}
                     data-minutes
+                    data-snap={CAL_SNAP_MIN}
                     onClick={(e) => {
                       if (e.target !== e.currentTarget || addAt) return;
-                      // Where in the hour you clicked, to the nearest 5 minutes.
+                      // The half hour you clicked, as in Outlook.
                       const r = e.currentTarget.getBoundingClientRect();
-                      const m = Math.min(55, Math.round((((e.clientY - r.top) / r.height) * 60) / SNAP_MIN) * SNAP_MIN);
-                      setAddAt({ iso, hour: h, minute: m });
+                      setAddAt({ iso, hour: h, minute: halfHourAt((e.clientY - r.top) / r.height) });
                     }}
                   >
-                    {dropHere && over?.minute !== undefined && (
-                      <span className="wg-drop-at" style={{ top: `${(over.minute / 60) * 100}%` }}>
-                        {timeLabel(timeOf(h * 60 + over.minute), locale)}
-                      </span>
+                    {addAt?.iso === iso && addAt.hour === h && (
+                      <div className="wg-add" style={{ top: addAt.minute ? "50%" : 0 }}>
+                        {field(iso, h, addAt.minute)}
+                      </div>
                     )}
-                    {addAt?.iso === iso && addAt.hour === h && field(iso, h, addAt.minute)}
                     {isToday && h === nowHour && <span className="plan-now" style={{ top: `${(now.getMinutes() / 60) * 100}%` }} aria-hidden />}
                   </div>
                 );
@@ -682,71 +718,5 @@ function MoveForEveryone({ title, when, onCancel, onMove }: { title: string; whe
         </div>
       </div>
     </div>
-  );
-}
-
-/**
- * Beside the week: tasks with no date yet, to drag onto a day or an hour,
- * and the deadlines coming up this week.
- */
-export function WeekSide({
-  tasks,
-  days,
-  today,
-  now,
-  locale,
-  drag,
-  onOpen,
-  month,
-}: {
-  tasks: Task[];
-  days: string[];
-  today: string;
-  now: Date;
-  locale: string;
-  drag: TaskDrag;
-  onOpen: (task: Task) => void;
-  /** The month at a glance, above the rest. */
-  month?: ReactNode;
-}) {
-  const undated = tasks.filter((t) => !t.done && !t.due_date && !t.someday && !t.paused);
-  const deadlines = tasks
-    .filter((t) => !t.done && t.deadline && t.deadline >= days[0] && t.deadline <= days[6])
-    .sort((a, b) => (a.deadline ?? "").localeCompare(b.deadline ?? ""));
-  return (
-    <aside className="side-pane week-side" aria-label="Not planned yet">
-      {month}
-      <div className="sp-head">
-        <span className="sp-title">No date yet</span>
-        <span className="sp-count">{undated.length}</span>
-      </div>
-      <div className="sp-body" data-autoscroll>
-        <p className="sp-hint">Drag onto a day or an hour to plan it.</p>
-        {undated.length === 0 && <p className="sp-empty">Everything has a day.</p>}
-        {undated.map((t) => (
-          <div
-            key={t.id}
-            className={drag.drag?.task.id === t.id ? "ws-card lifted" : "ws-card"}
-            onPointerDown={(e) => drag.start(e, t)}
-          >
-            <button type="button" className="ws-title" onClick={() => !drag.wasDrag() && onOpen(t)}>
-              {t.title}
-            </button>
-            {t.project && <span className="ws-meta">{t.project}</span>}
-          </div>
-        ))}
-        {deadlines.length > 0 && (
-          <>
-            <h3 className="sp-sub">Deadlines this week</h3>
-            {deadlines.map((t) => (
-              <button key={t.id} type="button" className="ws-deadline" onClick={() => onOpen(t)}>
-                <span>{t.title}</span>
-                <span className={t.deadline! <= today ? "late" : ""}>{relativeLabel(t.deadline!, now, locale)}</span>
-              </button>
-            ))}
-          </>
-        )}
-      </div>
-    </aside>
   );
 }

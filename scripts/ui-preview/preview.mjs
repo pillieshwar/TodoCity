@@ -1674,35 +1674,30 @@ const dragMeeting = async (p, title, dy, dx = 0) => {
 const meetings = (o = {}) => full({ settings: LIGHT, events: MOVE_EVENTS, ...o });
 await shot("full-meeting-dragging", FULL, meetings(), async (p) => {
   await side(/Calendar/)(p);
-  await dragMeeting(p, "Lunch with Sam", 52);
+  await dragMeeting(p, "Lunch with Sam", 72);
   await p.locator(".wg-event.lifted", { hasText: "1:00" }).waitFor();
 });
 await shot("full-meeting-moved", FULL, meetings(), async (p) => {
   await side(/Calendar/)(p);
-  await dragMeeting(p, "Lunch with Sam", 52);
+  await dragMeeting(p, "Lunch with Sam", 72);
   await p.mouse.up();
   await p.waitForFunction(() => window.__moved?.id === "m1");
   const m = await p.evaluate(() => window.__moved);
   if (!m.start.endsWith("T13:00:00") || !m.end.endsWith("T14:00:00") || m.everyone) throw new Error(`moved wrong: ${JSON.stringify(m)}`);
-  await p.locator(".toast", { hasText: "Moved “Lunch with Sam”" }).waitFor();
-});
-await shot("full-meeting-undo", FULL, meetings(), async (p) => {
-  await side(/Calendar/)(p);
-  await dragMeeting(p, "Lunch with Sam", 52);
-  await p.mouse.up();
-  await p.locator(".toast", { hasText: "Moved" }).getByRole("button", { name: "Undo" }).click();
-  await p.waitForFunction(() => window.__moved?.start?.endsWith("T12:00:00"));
+  // v0.4.82: the block moving is the feedback; no toast.
+  await p.waitForTimeout(300);
+  if (await p.locator(".toast", { hasText: "Moved" }).count()) throw new Error("moving a meeting still shows a toast");
 });
 await shot("full-meeting-everyone", FULL, meetings(), async (p) => {
   await side(/Calendar/)(p);
-  await dragMeeting(p, "Roadmap sync", 26);
+  await dragMeeting(p, "Roadmap sync", 36);
   await p.mouse.up();
   await p.getByRole("dialog", { name: "Move “Roadmap sync” for everyone?" }).waitFor();
   if (await p.evaluate(() => window.__moved)) throw new Error("moved before the OK");
 });
 await shot("full-meeting-everyone-moved", FULL, meetings(), async (p) => {
   await side(/Calendar/)(p);
-  await dragMeeting(p, "Roadmap sync", 26);
+  await dragMeeting(p, "Roadmap sync", 36);
   await p.mouse.up();
   await p.getByRole("button", { name: "Move for everyone" }).click();
   await p.waitForFunction(() => window.__moved?.id === "m2");
@@ -1711,7 +1706,7 @@ await shot("full-meeting-everyone-moved", FULL, meetings(), async (p) => {
 });
 await shot("full-meeting-invite-stays", FULL, meetings(), async (p) => {
   await side(/Calendar/)(p);
-  await dragMeeting(p, "Vendor call", 52);
+  await dragMeeting(p, "Vendor call", 72);
   await p.mouse.up();
   await p.waitForTimeout(200);
   if (await p.evaluate(() => window.__moved)) throw new Error("an invite moved");
@@ -2492,15 +2487,14 @@ await shot("full-done-toast-light", FULL, full({ settings: LIGHT }), async (p) =
   await p.waitForTimeout(800);
   if (!(await p.locator(".toast.done").count())) throw new Error("the Completed toast isn't green");
 });
-// Calendar opens with the side pane closed; opening it there is remembered for Calendar only.
+// v0.4.82: Calendar has no side pane at all (Today keeps its own).
 await shot("full-calendar-pane", FULL, full({ settings: DARK }), async (p) => {
   if (!(await p.getByRole("button", { name: "Hide calendar pane" }).count())) throw new Error("Today lost its pane");
   await side(/Calendar/)(p);
-  if (!(await p.getByRole("button", { name: "Show calendar pane" }).count())) throw new Error("Calendar opened with the pane showing");
-  await p.getByRole("button", { name: "Show calendar pane" }).click();
+  if (await p.locator(".pane-toggle").count()) throw new Error("Calendar still offers a side pane");
+  if (await p.locator(".full-body > .side-pane").count()) throw new Error("Calendar shows a side pane");
   await side(/^Today/)(p);
-  await side(/Calendar/)(p);
-  if (!(await p.getByRole("button", { name: "Hide calendar pane" }).count())) throw new Error("Calendar forgot its pane was opened");
+  if (!(await p.getByRole("button", { name: "Hide calendar pane" }).count())) throw new Error("Today lost its pane after Calendar");
 });
 // Drag the row of dates two days to the right: two new days come in on the right.
 await shot("full-calendar-slide", FULL, full({ settings: DARK }), async (p) => {
@@ -2580,7 +2574,14 @@ await shot("full-week-blocks", FULL, full({ settings: DARK, tasks: TIMED }), asy
   if (sb.height > hour.height / 2) throw new Error("a 7-minute task is drawn as big as an hour");
   // 13:05–14:40 and 13:30–14:00 overlap: side by side.
   if (Math.abs(db.width - rb.width) > 2 || Math.abs(db.x - rb.x) < 10) throw new Error("overlapping tasks aren't side by side");
-  if (!(await deep.innerText()).match(/1:05.*2:40/)) throw new Error(`no time range on the block: ${await deep.innerText()}`);
+  // v0.4.82: blocks show just the title, filled with their color.
+  if ((await deep.innerText()).match(/1:05|2:40/)) throw new Error(`the block still shows its time: ${await deep.innerText()}`);
+  const bg = await deep.evaluate((e) => getComputedStyle(e).backgroundColor);
+  if (/rgba\(0, 0, 0, 0\)|transparent/.test(bg)) throw new Error(`the block isn't filled (${bg})`);
+  // A dashed line at every half hour.
+  const half = await p.locator(".wg-body .wg-cell").first().evaluate((e) => getComputedStyle(e, "::after").borderTopStyle);
+  if (half !== "dashed") throw new Error(`no dashed half-hour line (${half})`);
+  if (hour.height < 70) throw new Error(`an hour is only ${Math.round(hour.height)}px tall`);
 });
 // v0.4.78: where a task came from shows as its app's logo, in lists and in Calendar.
 const SOURCED = [
@@ -2682,32 +2683,86 @@ await shot("full-week-resize", FULL, full({ settings: DARK, tasks: TIMED }), asy
   const ups = await updatesFor(p, idOf("Review Maya's draft"));
   if (!ups.some((u) => u.duration === 45)) throw new Error(`dragging the edge didn't make it 45 minutes: ${JSON.stringify(ups)}`);
 });
+// v0.4.82: a dragged block keeps its size and lands where its top edge is,
+// in quarter hours, with no label following the pointer and no toast.
 await shot("full-week-drop-minute", FULL, full({ settings: DARK, tasks: TIMED }), async (p) => {
   await side(/Calendar/)(p);
-  const block = p.locator(".wg-lane").nth(1).locator(".wg-task", { hasText: "Stand-up with Priya" });
+  const block = p.locator(".wg-lane").nth(1).locator(".wg-task", { hasText: "Deep work" });
   await block.scrollIntoViewIfNeeded();
   const from = await block.boundingBox();
   const cell = p.locator(`.wg-cell[data-iso="${day(2)}"][data-hour="10"]`);
+  await cell.scrollIntoViewIfNeeded();
   const to = await cell.boundingBox();
-  await p.mouse.move(from.x + 40, from.y + from.height / 2);
+  const from2 = await block.boundingBox();
+  const grab = 20;
+  await p.mouse.move(from2.x + 30, from2.y + grab);
   await p.mouse.down();
-  await p.mouse.move(from.x + 60, from.y + 20, { steps: 4 });
-  await p.mouse.move(to.x + 30, to.y + to.height * 0.5, { steps: 10 });
+  await p.mouse.move(from2.x + 50, from2.y + grab + 20, { steps: 4 });
+  // The block's top at 10:30.
+  await p.mouse.move(to.x + 30, to.y + to.height * 0.5 + grab, { steps: 10 });
   await p.waitForTimeout(150);
-  if (!(await p.locator(".wg-drop-at").count())) throw new Error("no time label while dropping");
+  const shadow = p.locator(".wg-shadow");
+  await shadow.waitFor();
+  const sb = await shadow.boundingBox();
+  if (Math.abs(sb.height - from.height) > 3) throw new Error(`the dragged copy is ${Math.round(sb.height)}px, the block ${Math.round(from.height)}px`);
+  if (Math.abs(sb.y - (to.y + to.height * 0.5)) > 4) throw new Error("the copy isn't where its top edge was taken");
+  if (!(await shadow.innerText()).match(/10:30/)) throw new Error(`the copy doesn't show its new time: ${await shadow.innerText()}`);
+  if (await p.locator(".pop-ghost").count()) throw new Error("a label still follows the pointer in Calendar");
   await p.mouse.up();
   await p.waitForTimeout(300);
-  const ups = await updatesFor(p, idOf("Stand-up with Priya"));
-  const t = ups.map((u) => u.due_time).find(Boolean);
-  // Lands inside the 10 o'clock hour, on a minute (not snapped to 10:00). Where
-  // in the short block the grab lands shifts it a few minutes, so any minute counts.
-  if (!t || !/^10:(?!00)\d[05]$/.test(t)) throw new Error(`dropped mid-hour but got ${t}`);
+  const ups = await updatesFor(p, idOf("Deep work: pricing page"));
+  const u = ups.find((x) => x.due_time);
+  if (!u || u.due_time !== "10:30" || u.due_date !== day(2)) throw new Error(`dropped at 10:30 on ${day(2)} but got ${JSON.stringify(ups)}`);
+  if (await p.locator(".toast", { hasText: "Moved" }).count()) throw new Error("moving a task in Calendar shows a toast");
+});
+// v0.4.82: click the lower half of an hour: a one-hour task at the half hour.
+await shot("full-week-add-half-hour", FULL, full({ settings: DARK }), async (p) => {
+  await side(/Calendar/)(p);
+  const cell = p.locator(`.wg-cell[data-iso="${day(4)}"][data-hour="20"]`);
+  await cell.scrollIntoViewIfNeeded();
+  const c = await cell.boundingBox();
+  await p.mouse.click(c.x + c.width / 2, c.y + c.height * 0.75);
+  await p.getByPlaceholder(/New task at 8:30/).waitFor();
+  await p.keyboard.type("Call Dana");
+  await p.keyboard.press("Enter");
+  const block = p.locator(".wg-task.wg-block", { hasText: "Call Dana" });
+  await block.waitFor();
+  const b = await block.boundingBox();
+  if (Math.abs(b.height - c.height) > 4) throw new Error(`a new Calendar task is ${Math.round(b.height)}px; an hour is ${Math.round(c.height)}px`);
+  if (Math.abs(b.y - (c.y + c.height / 2)) > 4) throw new Error("the new task doesn't start at the half hour");
+});
+// v0.4.82: a task's details open beside its block; a click elsewhere closes them.
+await shot("full-week-details-beside", FULL, full({ settings: LIGHT, tasks: TIMED }), async (p) => {
+  await side(/Calendar/)(p);
+  const block = p.locator(".wg-lane").nth(1).locator(".wg-task", { hasText: "Deep work" });
+  await block.scrollIntoViewIfNeeded();
+  await block.locator(".wg-title").click();
+  const pop = p.locator(".block-pop");
+  await pop.waitFor();
+  await p.waitForTimeout(300);
+  const [bb, pb] = [await block.boundingBox(), await pop.boundingBox()];
+  if (pb.x < bb.x + bb.width) throw new Error("the details don't open beside the block");
+  if (Math.abs(pb.y - bb.y) > 12 && pb.y + pb.height < bb.y) throw new Error("the details aren't level with the block");
+  if (await p.locator(".full-body > .side-pane").count()) throw new Error("a side pane opened too");
+});
+await shot("full-week-details-close", FULL, full({ settings: LIGHT, tasks: TIMED }), async (p) => {
+  await side(/Calendar/)(p);
+  const block = p.locator(".wg-lane").nth(1).locator(".wg-task", { hasText: "Deep work" });
+  await block.scrollIntoViewIfNeeded();
+  await block.locator(".wg-title").click();
+  await p.locator(".block-pop").waitFor();
+  await p.locator(".wg-days .wg-day").nth(5).click();
+  await p.waitForTimeout(200);
+  if (await p.locator(".block-pop").count()) throw new Error("a click elsewhere didn't close the details");
 });
 await shot("full-length-menu", FULL, full({ settings: DARK, tasks: TIMED }), async (p) => {
   await side(/Calendar/)(p);
   await p.locator(".wg-lane").nth(1).locator(".wg-task", { hasText: "Stand-up with Priya" }).locator(".wg-title").click();
   await p.waitForTimeout(250);
-  await p.getByRole("button", { name: "Length: 7 min" }).first().click();
+  // v0.4.82: details open beside the block, not in a side pane.
+  await p.locator(".block-pop").waitFor();
+  if (await p.locator(".full-body > .side-pane").count()) throw new Error("the details opened in a side pane");
+  await p.locator(".block-pop").getByRole("button", { name: "Length: 7 min" }).first().click();
   await p.getByRole("textbox", { name: "Length in minutes" }).fill("12");
   await p.keyboard.press("Enter");
   await p.waitForTimeout(250);

@@ -1,4 +1,12 @@
 {
+  "0.4.82": [
+    "Calendar looks more like Outlook: blocks are filled with their color, hours are taller, and a dashed line marks each half hour",
+    "Click a task in Calendar and its details open right next to it",
+    "Click an empty half hour to add a one-hour task there",
+    "Dragging a task keeps its size and shows exactly where it lands, in quarter hours",
+    "Moving tasks and meetings in Calendar is quiet: the block itself shows where it went",
+    "Calendar now uses the whole width of the window"
+  ],
   "0.4.81": [
     "TodoCity moves more smoothly: projects slide open in the sidebar, the selection glides between lists, and menus grow from their button",
     "Finish a task and the ones below glide up; new tasks arrive with a soft glow",

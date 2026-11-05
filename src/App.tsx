@@ -14,7 +14,9 @@ import { KeyboardIcon, KeysModal } from "./components/KeysModal";
 import { buildCity } from "./lib/city";
 import { cheerFor, newMilestones, type Milestone } from "./lib/milestones";
 import { CITY, PLAIN, WordsContext } from "./lib/words";
-import { WeekGrid, WeekSide, sevenDays } from "./components/WeekGrid";
+import { WeekGrid, sevenDays } from "./components/WeekGrid";
+import { BlockPop } from "./components/BlockPop";
+import { CALENDAR_NEW_MIN } from "./lib/timeblock";
 import { MonthCalendar } from "./components/MonthCalendar";
 import { applyLook, lookOf, weekStartOf } from "./lib/look";
 import { ProjectColors } from "./lib/colors";
@@ -656,6 +658,8 @@ export default function App() {
       setAgentPane(false);
       if (paneShown) return;
     }
+    // Calendar has no side pane: a task's details open beside its block.
+    if (calView) return;
     if (boardView) setBoardPane((o) => !o);
     else if (calView)
       setCalPane((o) => {
@@ -752,7 +756,12 @@ export default function App() {
   const drag = useTaskDrag((task, to) => {
     const patch = dropPatch(task, to);
     if (patch && to.place) void actions.place(task, patch);
-    else if (patch) void actions.reschedule(task, patch);
+    else if (patch && full && calView) {
+      // Given a time in the Calendar for the first time: an hour long, as in Outlook.
+      if (to.minute !== undefined && !task.due_time && !task.duration) patch.duration = CALENDAR_NEW_MIN;
+      // The block moving is the feedback: no toast.
+      void actions.reschedule(task, patch, { quiet: true });
+    } else if (patch) void actions.reschedule(task, patch);
   });
   const selectTask = (id: number, mode: "toggle" | "range") => {
     setSelected((sel) => {
@@ -1571,19 +1580,7 @@ export default function App() {
     // shows; the rest (the month and hours, the week's undated tasks) only
     // while the pane is open (the button at the top right).
     const paneOn = paneShown;
-    const sidePane = !tasksShown ? null : openTask && !inList ? (
-      <TaskDetail
-        task={openTask}
-        actions={actions}
-        now={now}
-        locale={LOCALE}
-        projects={fieldPlaces}
-        tags={tags}
-        command={command}
-        onClose={() => setOpenId(null)}
-        onStep={ids.includes(openTask.id) ? stepTask : undefined}
-      />
-    ) : agentPane ? (
+    const agentEl = (
       <AgentPanel
         clis={clis}
         sessions={termSessions}
@@ -1611,20 +1608,25 @@ export default function App() {
           openSettings("agents");
         }}
       />
-    ) : !paneOn ? null : upcoming ? (
-      <WeekSide
-        tasks={tasks}
-        days={weekDays}
-        today={today}
+    );
+    // Calendar has no side pane (the agents' panel only when asked for): a
+    // task's details open beside its block instead.
+    const weekShown = upcoming && tasksShown;
+    const sidePane = !tasksShown ? null : weekShown ? (agentPane ? agentEl : null) : openTask && !inList ? (
+      <TaskDetail
+        task={openTask}
+        actions={actions}
         now={now}
         locale={LOCALE}
-        drag={drag}
-        onOpen={(t) => setOpenId(t.id)}
-        month={
-          <MonthCalendar tasks={tasks} today={today} selected={planDay} locale={LOCALE} weekStart={weekStart} drag={drag} onSelect={setPlanDay} />
-        }
+        projects={fieldPlaces}
+        tags={tags}
+        command={command}
+        onClose={() => setOpenId(null)}
+        onStep={ids.includes(openTask.id) ? stepTask : undefined}
       />
-    ) : list !== "logbook" ? (
+    ) : agentPane ? (
+      agentEl
+    ) : !paneOn ? null : list !== "logbook" ? (
       // Every list: the month at a glance, and the picked day's hours below
       // it — in a project or on a floor, only that project's or floor's tasks.
       <aside className="side-pane plan-pane month-pane" aria-label="Calendar">
@@ -1938,7 +1940,7 @@ export default function App() {
                 <PlusIcon /> {w.addButton}
               </button>
             )}
-            {tasksShown && list !== "logbook" && (
+            {tasksShown && list !== "logbook" && !upcoming && (
               <button
                 type="button"
                 className={paneShown ? "icon pane-toggle" : "icon pane-toggle on"}
@@ -2007,9 +2009,22 @@ export default function App() {
                     onOpen={(t) => setOpenId(t.id)}
                     openId={openId}
                     onSlide={(n) => setPlanDay((d) => toISODate(addDays(parseISODate(d), n)))}
-                    onToast={(text, action) => show(text, action)}
                     onError={(e) => setError(e)}
                   />
+                  {openTask && (
+                    <BlockPop id={openTask.id} onClose={() => setOpenId(null)}>
+                      <TaskDetail
+                        task={openTask}
+                        actions={actions}
+                        now={now}
+                        locale={LOCALE}
+                        projects={fieldPlaces}
+                        tags={tags}
+                        command={command}
+                        onClose={() => setOpenId(null)}
+                      />
+                    </BlockPop>
+                  )}
                 </main>
               ) : (
                 <main
@@ -2090,7 +2105,8 @@ export default function App() {
           />
         )}
         <Toasts toasts={toasts} onDismiss={dismiss} />
-        {drag.drag && <DragGhost drag={drag.drag} now={now} locale={LOCALE} />}
+        {/* In the Calendar the block itself shows where it lands. */}
+        {drag.drag && !(upcoming && drag.drag.over?.minute !== undefined) && <DragGhost drag={drag.drag} now={now} locale={LOCALE} />}
         {keysSheet}
         {sendDialog}
         {askAgents && (

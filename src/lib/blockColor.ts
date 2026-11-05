@@ -34,5 +34,5 @@ export function inkOn(color: string | null | undefined): "#fff" | "#1d1d1f" {
   const rgb = parseColor(color);
   if (!rgb) return "#fff";
   // White on most colors, as in Outlook; dark only on light ones (yellow, mint, pastels).
-  return luminance(rgb) < 0.4 ? "#fff" : "#1d1d1f";
+  return luminance(rgb) < 0.3 ? "#fff" : "#1d1d1f";
 }

@@ -1997,7 +1997,13 @@ export default function App() {
               {timeline && tasksShown ? (
                 <main className="full-content timeline-page view-fade">
                   <Timeline
-                    projects={mode ? projectStats.filter((p) => showsTask(mode, { project: p.name })) : projectStats}
+                    projects={(() => {
+                      // Every project the sidebar shows, with or without open tasks.
+                      const known = new Map(projectStats.map((p) => [p.name, p]));
+                      for (const b of city.buildings) if (b.project && !known.has(b.project)) known.set(b.project, { name: b.project, open: b.open, done: b.done });
+                      const all = [...known.values()];
+                      return mode ? all.filter((p) => showsTask(mode, { project: p.name })) : all;
+                    })()}
                     today={today}
                     locale={LOCALE}
                     onOpen={(name) => setList(projectList(name))}

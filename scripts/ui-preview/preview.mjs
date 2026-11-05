@@ -560,6 +560,10 @@ function mockTauri(s) {
         else p.open += 1;
         m.set(t.project, p);
       }
+      // Projects with no tasks here, like the real projects table: planned ones and colored ones.
+      for (const [name, plan] of Object.entries(s.plans ?? {})) {
+        if (!m.has(name)) m.set(name, { name, open: 0, done: 0, color: (s.colors ?? {})[name] ?? null, synced: null, plan_start: plan?.[0] ?? null, plan_end: plan?.[1] ?? null });
+      }
       return [...m.values()];
     },
   };

@@ -37,7 +37,7 @@ const HOUR_PX = 72;
 /** A block filled with its color, and the text color that reads on it. */
 function fill(color: string | null | undefined, fallback?: string): CSSProperties {
   const c = color || fallback;
-  return (c ? { "--fill": c, "--on": inkOn(c) } : { "--fill": "var(--teal)", "--on": "#fff" }) as CSSProperties;
+  return (c ? { "--fill": c, "--on": inkOn(c) } : { "--fill": "var(--teal)", "--on": "var(--on-teal)" }) as CSSProperties;
 }
 /** Any time shows this many a day before "+N more". */
 const ANY_SHOWN = 2;

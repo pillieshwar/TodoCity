@@ -3723,6 +3723,10 @@ h1, h2, h3, .empty-big, .story-card h2 { text-wrap: balance; }
    (white or dark text, whichever reads: blockColor.ts) showing just the title;
    a dragged task's copy, the same size, where it will land; and a task's
    details opening beside its block (BlockPop.tsx). */
+/* Text on the accent color: white on the light theme's deep purple, dark on the dark theme's light one. */
+:root { --on-teal: #fff; }
+:root[data-theme="dark"] { --on-teal: #17132e; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --on-teal: #17132e; } }
 .wg-body .wg-cell::after {
   content: ""; position: absolute; left: 0; right: 0; top: 50%; z-index: 0; pointer-events: none;
   border-top: 1px dashed color-mix(in srgb, var(--line) 90%, transparent);
@@ -3745,7 +3749,7 @@ h1, h2, h3, .empty-big, .story-card h2 { text-wrap: balance; }
 /* The title wraps over the lines that fit (--lines), then "…". */
 .week-grid .wg-task.wg-block .wg-t, .week-grid .wg-event.wg-block .wg-event-title {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--lines, 2); white-space: normal;
-  overflow: hidden; overflow-wrap: break-word; -webkit-mask-image: none; mask-image: none;
+  overflow: hidden; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; -webkit-mask-image: none; mask-image: none;
 }
 .week-grid .wg-block.tiny .wg-t, .week-grid .wg-event.wg-block.tiny .wg-event-title {
   display: block; white-space: nowrap; text-overflow: ellipsis;

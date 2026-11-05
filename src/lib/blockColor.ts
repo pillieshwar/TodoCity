@@ -33,7 +33,6 @@ export function luminance([r, g, b]: [number, number, number]): number {
 export function inkOn(color: string | null | undefined): "#fff" | "#1d1d1f" {
   const rgb = parseColor(color);
   if (!rgb) return "#fff";
-  const l = luminance(rgb);
-  // Whichever has more contrast (white's is 1.05 / (l + 0.05), black's (l + 0.05) / 0.05).
-  return 1.05 / (l + 0.05) >= (l + 0.05) / 0.0625 ? "#fff" : "#1d1d1f";
+  // White on most colors, as in Outlook; dark only on light ones (yellow, mint, pastels).
+  return luminance(rgb) < 0.4 ? "#fff" : "#1d1d1f";
 }

@@ -14,6 +14,8 @@ describe("block colors", () => {
     expect(inkOn("#d6247a")).toBe("#fff");
     expect(inkOn("#2f6fdf")).toBe("#fff");
     expect(inkOn("#7c5cff")).toBe("#fff");
+    expect(inkOn("#3b82f6")).toBe("#fff");
+    expect(inkOn("#16a34a")).toBe("#fff");
     expect(inkOn("#f5c518")).toBe("#1d1d1f");
     expect(inkOn("#9be7c4")).toBe("#1d1d1f");
     expect(inkOn("#ffffff")).toBe("#1d1d1f");

@@ -175,6 +175,31 @@ pub fn launch_args(id: &str, mcp_command: &str, prompt: Option<&str>) -> Vec<Str
     args
 }
 
+/// Arguments that let agent `id` use some of TodoCity's own tools without
+/// asking, put before [`launch_args`]. Only Claude Code takes them, and only
+/// TodoCity's tools (`mcp__todocity__…`) are allowed this way.
+pub fn allow_args(id: &str, tools: &[String]) -> Vec<String> {
+    let tools: Vec<String> = tools
+        .iter()
+        .map(|t| t.trim())
+        .filter(|t| {
+            t.strip_prefix("mcp__todocity__").is_some_and(|rest| {
+                !rest.is_empty() && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            })
+        })
+        .map(str::to_string)
+        .collect();
+    if id != "claude" || tools.is_empty() {
+        return Vec::new();
+    }
+    let mut out = vec!["--allowedTools".to_string()];
+    out.extend(tools);
+    // Ends the list, so the first message isn't read as a tool.
+    out.push("--permission-mode".into());
+    out.push("default".into());
+    out
+}
+
 fn clip(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         s.to_string()
@@ -669,6 +694,32 @@ mod tests {
                 .all(|b| b.id != a.id && b.binary != a.binary));
         }
         assert!(cli("nope").is_none());
+    }
+
+    #[test]
+    fn only_todocity_tools_are_pre_approved_and_only_for_claude() {
+        let tools = vec![
+            "mcp__todocity__slack_check".to_string(),
+            "mcp__slack__send_message".to_string(),
+            "mcp__todocity__".to_string(),
+            "Bash".to_string(),
+        ];
+        assert_eq!(
+            allow_args("claude", &tools),
+            vec![
+                "--allowedTools",
+                "mcp__todocity__slack_check",
+                "--permission-mode",
+                "default"
+            ]
+        );
+        assert!(allow_args("codex", &tools).is_empty());
+        assert!(allow_args("claude", &["Bash".to_string()]).is_empty());
+        // Before the prompt, the list is closed by another option.
+        let mut args = launch_args("claude", "/x/TodoCity", Some("hi"));
+        args.splice(0..0, allow_args("claude", &tools));
+        assert_eq!(args.last().map(String::as_str), Some("hi"));
+        assert_eq!(args[args.len() - 3], "--permission-mode");
     }
 
     #[test]

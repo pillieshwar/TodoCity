@@ -334,6 +334,35 @@ function mockTauri(s) {
       s.events = s.events.map((e) => (e === at ? now : e));
       return now;
     },
+    // v0.4.86: the Slack connector (an agent reads Slack).
+    slack_status: () =>
+      window.__slackStatus ??
+      s.slack ?? { enabled: false, phase: "off", reason: null, detail: null, agent: null, agent_name: null, scanning: false, last_checked: null, next_check: null, covered_until: null, last_error: null, added: 0, activity: [] },
+    slack_agents: () => [
+      { id: "claude", name: "Claude Code", installed: true },
+      { id: "codex", name: "Codex", installed: true },
+      { id: "cursor", name: "Cursor Agent", installed: false },
+    ],
+    slack_connect: (a) => {
+      window.__slackConnect = a;
+      const agent = a.agent ?? "claude";
+      const names = { claude: "Claude Code", codex: "Codex", cursor: "Cursor Agent" };
+      const plan = { agent, agent_name: names[agent], prompt: "TodoCity is turning on its Slack connector…", allow: agent === "claude" ? ["mcp__todocity__slack_check"] : [] };
+      s.slack = { enabled: true, phase: "checking", reason: null, detail: null, agent, agent_name: names[agent], scanning: false, last_checked: null, next_check: null, covered_until: null, last_error: null, added: 0, activity: [] };
+      window.__slackStatus = undefined;
+      setTimeout(() => {
+        window.__emit?.("slack-setup", plan);
+        window.__emit?.("slack-changed", null);
+      }, 0);
+      return plan;
+    },
+    slack_disconnect: () => {
+      s.slack = { ...(s.slack ?? {}), enabled: false, phase: "off" };
+      setTimeout(() => window.__emit?.("slack-changed", null), 0);
+    },
+    slack_check_now: () => {
+      window.__slackCheckNow = true;
+    },
     // v0.4.80: Focus Blocks.
     focus_status: () => s.focus ?? null,
     focus_set: (a) => {
@@ -1409,6 +1438,62 @@ await shot("full-watch-no-agents", FULL, full({ settings: LIGHT, watch: { ...WAT
   await p.locator(".watch-page").getByRole("button", { name: "Agents", exact: true }).click();
   await p.locator(".set-subhead", { hasText: "Your agents" }).waitFor();
 });
+// v0.4.86: the Slack connector — one switch; the agent checks Slack in the panel.
+const SLACK_READY = {
+  enabled: true,
+  phase: "ready",
+  reason: null,
+  detail: null,
+  agent: "claude",
+  agent_name: "Claude Code",
+  scanning: false,
+  last_checked: localStamp(-2),
+  next_check: localStamp(3),
+  covered_until: localStamp(-2),
+  last_error: null,
+  added: 3,
+  activity: [
+    { at: localStamp(-2), kind: "added", text: "Review Maya's launch plan by Friday", url: "https://acme.slack.com/archives/D01/p1" },
+    { at: localStamp(-40), kind: "added", text: "Send Dana the Q3 numbers", url: "https://acme.slack.com/archives/D02/p2" },
+    { at: localStamp(-95), kind: "added", text: "Reply to Priya about the offsite venue", url: null },
+    { at: localStamp(-96), kind: "ready", text: "Connected through Claude Code", url: null },
+  ],
+};
+await shot("panel-connectors-slack-ready", PANEL, scenario({ slack: SLACK_READY }), async (p) => {
+  await tab(p, "Connectors");
+  await p.locator(".slack-activity li").first().waitFor();
+});
+await shot("full-slack-setup", FULL, full({ settings: LIGHT }), async (p) => {
+  await p.locator(".sidebar").getByRole("button", { name: /^Settings/ }).click();
+  await tab(p, "Connectors");
+  await p.locator(".slack-switch").click();
+  await p.locator(".slack-dialog").getByText("Checking Slack with Claude Code").waitFor();
+  await p.locator(".agent-pane").waitFor();
+  const started = await p.evaluate(() => window.__termStart);
+  if (started?.agent !== "claude" || !started.allow?.includes("mcp__todocity__slack_check")) throw new Error(`the check starts in the panel: ${JSON.stringify(started)}`);
+});
+await shot("full-slack-needs-slack", FULL, full({ settings: LIGHT }), async (p) => {
+  await p.locator(".sidebar").getByRole("button", { name: /^Settings/ }).click();
+  await tab(p, "Connectors");
+  await p.locator(".slack-switch").click();
+  await p.locator(".slack-dialog").waitFor();
+  await p.evaluate(() => {
+    window.__slackStatus = { enabled: true, phase: "needs_slack", reason: "no_slack", detail: null, agent: "claude", agent_name: "Claude Code", scanning: false, last_checked: null, next_check: null, covered_until: null, last_error: null, added: 0, activity: [] };
+    window.__emit("slack-changed", null);
+  });
+  await p.locator(".slack-dialog").getByText("Connect Slack to Claude Code").waitFor();
+});
+await shot("full-slack-ready", FULL, full({ settings: DARK }), async (p) => {
+  await p.locator(".sidebar").getByRole("button", { name: /^Settings/ }).click();
+  await tab(p, "Connectors");
+  await p.locator(".slack-switch").click();
+  await p.locator(".slack-dialog").waitFor();
+  await p.evaluate((ready) => {
+    window.__slackStatus = ready;
+    window.__emit("slack-changed", null);
+  }, SLACK_READY);
+  await p.locator(".slack-dialog").getByText("Slack is connected").waitFor();
+}, true);
 // v0.4.66: the agent panel, and tasks sent to agents.
 const TODAY_OPEN = FULL_TASKS.filter((t) => t.due_date === day(0) && !t.done);
 const RUN_WORKING = FULL_TASKS.find((t) => t.title.startsWith("Wrap up the launch notes"));

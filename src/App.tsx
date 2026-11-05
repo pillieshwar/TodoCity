@@ -52,7 +52,12 @@ import {
   onAgentRuns,
   onInboxChanged,
   onTermExit,
+  onSlackChanged,
+  onSlackSetup,
 } from "./lib/api";
+import { SlackSetupDialog } from "./components/SlackConnector";
+import { helpConnectPrompt } from "./lib/slack";
+import type { SlackSetupPlan, SlackStatus } from "./lib/types";
 import { agentCounts, agentsBy, byAgent, filterWho, latestByTask, type Who } from "./lib/agents";
 import { AgentMarks, AgentsSetUpDialog } from "./components/WhoSwitch";
 import { ViewMenu, whoLabel } from "./components/ViewMenu";
@@ -537,7 +542,7 @@ export default function App() {
   /** Open a terminal (an agent, or a plain shell), optionally on a task. */
   const startTerm = async (
     agent: string | null,
-    o: { folder?: string | null; taskId?: number; extra?: string; prompt?: string } = {},
+    o: { folder?: string | null; taskId?: number; extra?: string; prompt?: string; allow?: string[] } = {},
   ) => {
     const width = (sideW || defaultSideWidth()) - 2;
     const { cols, rows } = guessSize(width, window.innerHeight - 190);
@@ -549,6 +554,7 @@ export default function App() {
         taskId: o.taskId ?? null,
         extra: o.extra ?? null,
         prompt: o.prompt ?? null,
+        allow: o.allow ?? null,
         cols,
         rows,
       });
@@ -587,6 +593,66 @@ export default function App() {
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [runMap, termSessions, full, panelFolder, actions],
+  );
+  // The Slack connector: turning it on (Settings → Connectors) starts the
+  // agent's Slack check in the agent panel, with a dialog saying what's
+  // happening and when it's ready.
+  const [slackPlan, setSlackPlan] = useState<(SlackSetupPlan & { n: number }) | null>(null);
+  const [slackDialog, setSlackDialog] = useState(false);
+  const [slackStatus, setSlackStatus] = useState<SlackStatus | null>(null);
+  const slackSeq = useRef(0);
+  const slackStarted = useRef(0);
+  const slackPhase = useRef<string | null>(null);
+  useEffect(() => {
+    const load = () => api.slackStatus().then(setSlackStatus).catch(() => undefined);
+    load();
+    const subs = [
+      onSlackChanged(load),
+      onSlackSetup((plan) => {
+        slackSeq.current += 1;
+        setSlackPlan({ ...plan, n: slackSeq.current });
+        setSlackDialog(true);
+      }),
+    ];
+    return () => subs.forEach((p) => void p.then((u) => u()));
+  }, []);
+  const showAgentPane = () => {
+    setTab("tasks");
+    setAgentPane(true);
+    if (!full) void api.setPanelFull(true).catch(() => undefined);
+  };
+  useEffect(() => {
+    if (!slackPlan || slackStarted.current === slackPlan.n) return;
+    slackStarted.current = slackPlan.n;
+    showAgentPane();
+    void startTerm(slackPlan.agent, { folder: homeDir || null, prompt: slackPlan.prompt, allow: slackPlan.allow }).catch((e) => setError(String(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slackPlan]);
+  // Say so once when a check finishes, wherever the person is.
+  useEffect(() => {
+    const phase = slackStatus?.phase ?? null;
+    const was = slackPhase.current;
+    slackPhase.current = phase;
+    if (was !== "checking" || phase === "checking") return;
+    if (phase === "ready") show("Slack is connected. Messages that need you will show up in your Inbox.");
+    else if (phase === "needs_slack") show(`Connect Slack to ${slackStatus?.agent_name ?? "your agent"} to finish setting up.`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slackStatus?.phase]);
+  const slackDialogEl = slackPlan && slackDialog && (
+    <SlackSetupDialog
+      plan={slackPlan}
+      status={slackStatus}
+      onClose={() => setSlackDialog(false)}
+      onWatch={() => {
+        setSlackDialog(false);
+        showAgentPane();
+      }}
+      onHelp={() => {
+        setSlackDialog(false);
+        showAgentPane();
+        void startTerm(slackPlan.agent, { folder: homeDir || null, prompt: helpConnectPrompt() }).catch((e) => setError(String(e)));
+      }}
+    />
   );
   const sendDialog = sendTask && (
     <SendToAgentDialog
@@ -2154,6 +2220,7 @@ export default function App() {
         {drag.drag && !(upcoming && drag.drag.over?.minute !== undefined) && <DragGhost drag={drag.drag} now={now} locale={LOCALE} />}
         {keysSheet}
         {sendDialog}
+        {slackDialogEl}
         {askAgents && (
           <AgentsSetUpDialog
             onClose={() => setAskAgents(false)}
@@ -2374,6 +2441,7 @@ export default function App() {
         </button>
       </footer>
       {sendDialog}
+      {slackDialogEl}
     </div>
     </AgentRuns.Provider>
     </SourceDisplay.Provider>

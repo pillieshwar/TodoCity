@@ -110,6 +110,22 @@ fn on_call(app: &AppHandle, call: ToolCall) -> CallReply {
             },
         };
     }
+    // The agent checking Slack for the Slack connector: only answers the
+    // check TodoCity started (by its token).
+    if call.tool == todocity_core::slack::CHECK_TOOL {
+        return match crate::slack::on_check(app, &call.args) {
+            Ok(result) => CallReply {
+                ok: true,
+                result: Some(result),
+                error: None,
+            },
+            Err(e) => CallReply {
+                ok: false,
+                result: None,
+                error: Some(e),
+            },
+        };
+    }
     let settings = app.state::<Settings>().get();
     if !settings.agents_enabled || !settings.agents_full_access {
         return CallReply {

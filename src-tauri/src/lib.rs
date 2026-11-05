@@ -32,6 +32,7 @@ mod reminders;
 mod services;
 mod settings;
 mod shortcuts;
+mod slack;
 mod slack_cleanup;
 mod spaces;
 mod sync;
@@ -116,7 +117,7 @@ pub(crate) fn insert_task(app: &AppHandle, task: NewTask) -> CmdResult<Task> {
 }
 
 /// Add a task exactly where it says (no mode default) and update everything.
-fn insert_task_as_is(app: &AppHandle, task: NewTask) -> CmdResult<Task> {
+pub(crate) fn insert_task_as_is(app: &AppHandle, task: NewTask) -> CmdResult<Task> {
     let task = NewTask {
         created_tz: task
             .created_tz
@@ -1633,6 +1634,7 @@ pub fn run() {
             app.manage(sync::SyncService::new(&data_dir));
             app.manage(calsync::CalendarSync::start(app.handle(), &data_dir));
             app.manage(focus::FocusService::new(&data_dir));
+            app.manage(slack::SlackService::new(&data_dir));
             mirror::Mirror::start(app.handle());
 
             // Every 30 s: release the model's memory when idle, and roll the
@@ -1743,6 +1745,8 @@ pub fn run() {
             sync::start(app.handle());
             agents::start(app.handle());
             agent_panel::start(app.handle());
+            // Slack messages that need the person, as Inbox tasks.
+            slack::start(app.handle());
             watch::start(app.handle());
             double_copy::start(app.handle());
             Ok(())
@@ -1886,6 +1890,11 @@ pub fn run() {
             calendar_move_event,
             calendar_open_privacy_settings,
             focus::focus_status,
+            slack::slack_status,
+            slack::slack_agents,
+            slack::slack_connect,
+            slack::slack_disconnect,
+            slack::slack_check_now,
             focus::focus_set,
             focus::focus_make_calendar,
             focus::focus_try,

@@ -1,4 +1,5 @@
 import { useState, type CSSProperties } from "react";
+import { openTaskMenu } from "./TaskMenu";
 import { SourceChip, useSourceDisplay } from "./SourceChip";
 import { playDone } from "../lib/doneSound";
 import { useProjectColor } from "../lib/colors";
@@ -155,6 +156,7 @@ function Card({
       className={["bcard", open ? "open" : "", task.done ? "done" : "", leaving ? "leaving" : "", drag.drag?.task.id === task.id ? "lifted" : ""].filter(Boolean).join(" ")}
       style={pc ? ({ "--pc": pc } as CSSProperties) : undefined}
       onPointerDown={(e) => drag.start(e, task)}
+      onContextMenu={(e) => openTaskMenu(e, task)}
       onClick={(e) => {
         if (drag.wasDrag()) return;
         if ((e.target as HTMLElement).closest("button, a")) return;

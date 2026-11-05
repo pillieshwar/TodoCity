@@ -524,6 +524,12 @@ function mockTauri(s) {
       setTimeout(() => window.__emit?.("tasks-changed", null), 0);
       return { ...t };
     },
+    delete_task: (a) => {
+      (window.__deleted ??= []).push(a.id);
+      s.tasks = s.tasks.filter((x) => x.id !== a.id);
+      setTimeout(() => window.__emit?.("tasks-changed", null), 0);
+      return null;
+    },
     add_task: (a) => {
       const t = {
         id: 900 + s.tasks.length, title: "", due_date: null, due_time: null, recurrence: null, source_text: null, source_app: null,
@@ -1974,6 +1980,55 @@ await shot("motion-menu-and-tooltip", FULL, MOTION(), async (p) => {
   if ((await search.getAttribute("title")) !== "Search (/ or ⌘K)") throw new Error("the button's title wasn't put back");
   await search.hover();
   await p.waitForTimeout(700);
+});
+// v0.4.83: right-click a task for Open, Done, Duplicate and Delete.
+await shot("full-right-click-menu", FULL, full({ settings: DARK }), async (p) => {
+  const row = p.locator(".task .task-row").first();
+  await row.click({ button: "right" });
+  const menu = p.getByRole("menu");
+  await menu.waitFor();
+  for (const name of ["Open", "Mark as done", "Duplicate", "Delete"]) await menu.getByRole("menuitem", { name }).waitFor();
+});
+await shot("full-right-click-delete", FULL, full({ settings: DARK }), async (p) => {
+  const row = p.locator(".task").first();
+  const title = (await row.locator(".task-title").first().innerText()).trim();
+  await row.locator(".task-row").click({ button: "right" });
+  await p.getByRole("menuitem", { name: "Delete" }).click();
+  await p.waitForFunction(() => (window.__deleted ?? []).length === 1);
+  await p.locator(".toast", { hasText: "Deleted" }).waitFor();
+  await p.waitForTimeout(300);
+  if (await p.locator(".task-title", { hasText: title }).count()) throw new Error(`“${title}” is still in the list`);
+  if (await p.getByRole("menu").count()) throw new Error("the menu stayed open");
+});
+// v0.4.83: when a task leaves, the rows and the headers below glide up together.
+await shot("motion-delete-glide", FULL, MOTION(), async (p) => {
+  const headers = p.locator(".groups h2.day");
+  if ((await headers.count()) < 2) throw new Error("Today needs two sections for this check");
+  const first = p.locator(".groups section").first().locator(".task").first();
+  await first.locator(".task-row").click({ button: "right" });
+  const del = p.getByRole("menuitem", { name: "Delete" });
+  await del.waitFor();
+  // Watch the second header and the row above it every frame while the list closes the gap.
+  await p.evaluate(() => {
+    const h = document.querySelectorAll(".groups h2.day")[1];
+    const row = h.closest("section").previousElementSibling?.querySelector(".task:last-child");
+    window.__glide = [];
+    const t0 = performance.now();
+    const tick = () => {
+      window.__glide.push({ h: h.getBoundingClientRect().top, r: row ? row.getBoundingClientRect().bottom : null });
+      if (performance.now() - t0 < 900) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  await del.click();
+  await p.waitForTimeout(1000);
+  const g = await p.evaluate(() => window.__glide);
+  const tops = [...new Set(g.map((x) => Math.round(x.h)))];
+  if (tops.length < 4) throw new Error(`the header jumped instead of gliding (${tops.join(", ")})`);
+  // Never back down again on the way up.
+  for (let i = 1; i < g.length; i++) if (g[i].h > g[i - 1].h + 1) throw new Error(`the header bounced: ${g.map((x) => Math.round(x.h)).join(", ")}`);
+  // A row never slides over the header below it.
+  if (g.some((x) => x.r !== null && x.r > x.h + 2)) throw new Error("a row overlapped the header below it");
 });
 await shot("motion-toast-undo-line", FULL, MOTION(), async (p) => {
   await p.locator(".task .check").first().click();

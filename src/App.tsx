@@ -16,6 +16,7 @@ import { cheerFor, newMilestones, type Milestone } from "./lib/milestones";
 import { CITY, PLAIN, WordsContext } from "./lib/words";
 import { WeekGrid, sevenDays } from "./components/WeekGrid";
 import { BlockPop } from "./components/BlockPop";
+import { TaskMenuHost } from "./components/TaskMenu";
 import { CALENDAR_NEW_MIN } from "./lib/timeblock";
 import { MonthCalendar } from "./components/MonthCalendar";
 import { applyLook, lookOf, weekStartOf } from "./lib/look";
@@ -2105,6 +2106,7 @@ export default function App() {
           />
         )}
         <Toasts toasts={toasts} onDismiss={dismiss} />
+        <TaskMenuHost actions={actions} onOpen={(t) => setOpenId(t.id)} />
         {/* In the Calendar the block itself shows where it lands. */}
         {drag.drag && !(upcoming && drag.drag.over?.minute !== undefined) && <DragGhost drag={drag.drag} now={now} locale={LOCALE} />}
         {keysSheet}
@@ -2314,6 +2316,7 @@ export default function App() {
         <BatchBar tasks={selectedTasks} actions={actions} projects={projectInfos} onClear={() => setSelected(new Set())} />
       )}
       <Toasts toasts={toasts} onDismiss={dismiss} />
+      <TaskMenuHost actions={actions} onOpen={(t) => setOpenId(t.id)} />
       {drag.drag && <DragGhost drag={drag.drag} now={now} locale={LOCALE} />}
 
       {keysSheet}

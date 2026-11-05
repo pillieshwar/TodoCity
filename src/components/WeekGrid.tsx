@@ -1,4 +1,5 @@
 import { reducedMotion } from "../lib/motion";
+import { openTaskMenu } from "./TaskMenu";
 import { LogoBadge, SourceBadge, SourceMark } from "./SourceChip";
 import { fileLogo } from "../lib/sourceLogos";
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -294,6 +295,7 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
         style={fill(t.project ? colors[t.project] : null)}
         data-block-id={t.id}
         onPointerDown={(e) => drag.start(e, t)}
+        onContextMenu={(e) => openTaskMenu(e, t)}
       >
         <button type="button" className="plan-check" data-nodrag onClick={() => complete(t)} aria-label={`Mark “${t.title}” done`}>
           <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.6">
@@ -343,6 +345,10 @@ export function WeekGrid({ tasks, day, today, now, locale, actions, drag, onAdd,
         }}
         onMouseEnter={(e) => peekOn(t, e.currentTarget)}
         onMouseLeave={peekOff}
+        onContextMenu={(e) => {
+          peekOff();
+          openTaskMenu(e, t);
+        }}
       >
         <button type="button" className="plan-check" data-nodrag onClick={() => complete(t)} aria-label={`Mark “${t.title}” done`}>
           <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.6">

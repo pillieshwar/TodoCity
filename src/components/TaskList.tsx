@@ -1,4 +1,5 @@
 import { useWords } from "../lib/words";
+import { openTaskMenu } from "./TaskMenu";
 import { playDone } from "../lib/doneSound";
 import { type CSSProperties, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useProjectColor } from "../lib/colors";
@@ -145,7 +146,7 @@ export function TaskList(props: Props) {
           data-drop-project={section !== null ? props.dropProject : undefined}
           data-drop-floor={section !== null ? section : undefined}
         >
-          <h2 className={props.plain ? "day sr-only" : "day"}>
+          <h2 className={props.plain ? "day sr-only" : "day"} data-flip={`g:${g.key}`}>
             {g.label}
             <span className="count">{g.tasks.length}</span>
             {g.key === "overdue" && g.tone === "overdue" && (
@@ -308,6 +309,7 @@ function TaskRow({
         if (!open && drag && !(e.metaKey || e.ctrlKey || e.shiftKey)) drag.start(e, task);
       }}
       onMouseDown={() => onFocus(task.id)}
+      onContextMenu={(e) => openTaskMenu(e, task)}
       // ⌘-click toggles a task in the selection, Shift-click selects a range.
       onMouseDownCapture={(e) => {
         if (open || !(e.metaKey || e.ctrlKey || e.shiftKey) || e.button !== 0) return;

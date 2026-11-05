@@ -30,15 +30,17 @@ import {
   timeOf,
   titleLines,
 } from "../lib/timeblock";
-import { EVENT_FALLBACK, inkOn } from "../lib/blockColor";
 
 /** One hour of the Calendar, in pixels (matches `--wg-hour` in styles.css). */
 const HOUR_PX = 72;
 
-/** A block filled with its color, and the text color that reads on it. */
+/** A meeting whose calendar has no color. */
+const EVENT_FALLBACK = "#8e8e93";
+
+/** A block's color: a soft wash of it, a stripe and a tone of it for the text (styles.css). */
 function fill(color: string | null | undefined, fallback?: string): CSSProperties {
   const c = color || fallback;
-  return (c ? { "--fill": c, "--on": inkOn(c) } : { "--fill": "var(--teal)", "--on": "var(--on-teal)" }) as CSSProperties;
+  return { "--fill": c || "var(--teal)" } as CSSProperties;
 }
 /** Any time shows this many a day before "+N more". */
 const ANY_SHOWN = 2;

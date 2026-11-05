@@ -60,7 +60,7 @@ import {
 } from "./lib/api";
 import { SlackSetupDialog } from "./components/SlackConnector";
 import { helpConnectPrompt } from "./lib/slack";
-import type { ActivityEntry, SlackSetupPlan, SlackStatus } from "./lib/types";
+import type { ActivityEntry, PanelRequest, SlackSetupPlan, SlackStatus } from "./lib/types";
 import { agentCounts, agentsBy, byAgent, filterWho, latestByTask, type Who } from "./lib/agents";
 import { AgentMarks, AgentsSetUpDialog } from "./components/WhoSwitch";
 import { ViewMenu, whoLabel } from "./components/ViewMenu";
@@ -668,19 +668,30 @@ export default function App() {
   }, [slackStatus?.phase]);
   // Settings → Agents asked for the panel: Connect starts the agent there
   // (or shows what was done in Activity), Open starts it.
+  // One listener for the app's life (it calls the latest handler), so a
+  // request never starts the agent twice.
+  const onPanelRequest = useRef<(r: PanelRequest) => void>(() => undefined);
+  onPanelRequest.current = (r: PanelRequest) => {
+    showAgentPane();
+    if (r.agent) {
+      void startTerm(r.agent, { folder: homeDir || null, prompt: r.prompt ?? undefined }).catch((e) => {
+        setError(String(e));
+        setActivityOpen(true);
+      });
+    } else setActivityOpen(true);
+  };
   useEffect(() => {
+    let last = { key: "", at: 0 };
     const sub = onAgentPanelOpen((r) => {
-      showAgentPane();
-      if (r.agent) {
-        void startTerm(r.agent, { folder: homeDir || null, prompt: r.prompt ?? undefined }).catch((e) => {
-          setError(String(e));
-          setActivityOpen(true);
-        });
-      } else setActivityOpen(true);
+      // The same request twice in a moment (a double click) starts it once.
+      const key = `${r.agent ?? ""}|${r.prompt ?? ""}`;
+      const now = Date.now();
+      if (key === last.key && now - last.at < 1500) return;
+      last = { key, at: now };
+      onPanelRequest.current(r);
     });
     return () => void sub.then((u) => u());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [homeDir, full, sideW]);
+  }, []);
   const slackDialogEl = slackPlan && slackDialog && (
     <SlackSetupDialog
       plan={slackPlan}

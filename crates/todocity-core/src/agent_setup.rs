@@ -254,7 +254,7 @@ mod tests {
         let a = new_custom("/Users/sam/.local/bin/aider", &[]).unwrap();
         assert_eq!(a.id, "custom:aider");
         assert_eq!(a.name, "Aider");
-        let b = new_custom("/opt/tools/aider", &[a.clone()]).unwrap();
+        let b = new_custom("/opt/tools/aider", std::slice::from_ref(&a)).unwrap();
         assert_eq!(b.id, "custom:aider-2");
         assert_eq!(pretty_name("open-code_cli"), "Open Code Cli");
         assert_eq!(pretty_name(""), "My agent");

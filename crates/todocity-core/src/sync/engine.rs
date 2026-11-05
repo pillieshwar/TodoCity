@@ -264,7 +264,9 @@ impl Store {
             f.insert("deleted".into(), Value::Bool(false));
             out.insert(format!("t:{uid}"), f);
         }
-        let mut stmt = self.conn.prepare("SELECT name, color FROM projects")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT name, color, plan_start, plan_end FROM projects")?;
         let mut rows = stmt.query([])?;
         while let Some(r) = rows.next()? {
             let name: String = r.get(0)?;
@@ -273,6 +275,8 @@ impl Store {
             }
             let mut f = Fields::new();
             f.insert("color".into(), to_json(r.get_ref(1)?));
+            f.insert("plan_start".into(), to_json(r.get_ref(2)?));
+            f.insert("plan_end".into(), to_json(r.get_ref(3)?));
             f.insert("deleted".into(), Value::Bool(false));
             out.insert(format!("p:{name}"), f);
         }
@@ -671,7 +675,18 @@ fn write_project(
         "UPDATE projects SET color = ?2 WHERE name = ?1 AND color IS NOT ?2",
         params![name, color],
     )?;
-    Ok(added + recolored > 0)
+    // The Timeline span; a Mac too old to know it sends no such field, and
+    // then the span here stays as it is.
+    let mut planned = 0;
+    for col in ["plan_start", "plan_end"] {
+        if let Some(v) = fields.get(col) {
+            planned += tx.execute(
+                &format!("UPDATE projects SET {col} = ?2 WHERE name = ?1 AND {col} IS NOT ?2"),
+                params![name, to_sql(v)],
+            )?;
+        }
+    }
+    Ok(added + recolored + planned > 0)
 }
 
 fn write_floor(
@@ -762,6 +777,8 @@ mod tests {
             .unwrap();
         a.create_project("Trip").unwrap();
         a.set_project_color("Trip", Some("#336699")).unwrap();
+        a.set_project_plan("Trip", Some(("2026-12-01", "2027-02-28")))
+            .unwrap();
         a.add_floor("Trip", "Before").unwrap();
         b.insert(new("Call Maya")).unwrap();
 
@@ -778,6 +795,10 @@ mod tests {
         assert_eq!(on_b.due_date.as_deref(), Some("2026-11-02"));
         assert_eq!(on_b.checklist.len(), 1);
         assert_eq!(b.projects().unwrap()[0].color.as_deref(), Some("#336699"));
+        assert_eq!(
+            b.projects().unwrap()[0].plan_end.as_deref(),
+            Some("2027-02-28")
+        );
         assert_eq!(b.floors().unwrap()[0].name, "Before");
 
         // Nothing new after applying: no echo back.
@@ -890,6 +911,52 @@ mod tests {
         send(&a, "A", &b, "B");
         assert_eq!(b.all().unwrap().len(), 2);
         assert_eq!(b.all().unwrap().iter().filter(|t| t.done).count(), 1);
+    }
+
+    #[test]
+    fn timeline_spans_travel_both_ways_and_keep_the_color() {
+        let a = Store::open_in_memory().unwrap();
+        let b = Store::open_in_memory().unwrap();
+        a.create_project("Launch").unwrap();
+        a.set_project_color("Launch", Some("#f6c1d0")).unwrap();
+        a.set_project_plan("Launch", Some(("2026-11-01", "2026-12-15")))
+            .unwrap();
+        send(&a, "A", &b, "B");
+        let p = |s: &Store| {
+            let p = s
+                .projects()
+                .unwrap()
+                .into_iter()
+                .find(|p| p.name == "Launch")
+                .unwrap();
+            (p.plan_start, p.plan_end, p.color)
+        };
+        assert_eq!(
+            p(&b),
+            (
+                Some("2026-11-01".into()),
+                Some("2026-12-15".into()),
+                Some("#f6c1d0".into())
+            )
+        );
+        // Dragged on B: A follows, and the color stays.
+        b.set_project_plan("Launch", Some(("2026-11-15", "2027-01-31")))
+            .unwrap();
+        send(&b, "B", &a, "A");
+        assert_eq!(
+            p(&a),
+            (
+                Some("2026-11-15".into()),
+                Some("2027-01-31".into()),
+                Some("#f6c1d0".into())
+            )
+        );
+        // Off the Timeline on A: off on B.
+        a.set_project_plan("Launch", None).unwrap();
+        send(&a, "A", &b, "B");
+        assert_eq!(p(&b), (None, None, Some("#f6c1d0".into())));
+        // Nothing echoes back.
+        assert_eq!(b.sync_collect("B", "B", &none()).unwrap(), 0);
     }
 
     #[test]

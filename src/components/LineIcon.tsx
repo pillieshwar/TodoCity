@@ -192,6 +192,14 @@ const PATHS = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  // Bars of different lengths and starts: projects across months.
+  timeline: (
+    <>
+      <rect x="3.5" y="4.5" width="10" height="4" rx="2" />
+      <rect x="8.5" y="10" width="12" height="4" rx="2" />
+      <rect x="5" y="15.5" width="9" height="4" rx="2" />
+    </>
+  ),
   eye: <path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12zM12 14.8a2.8 2.8 0 1 0 0-5.6 2.8 2.8 0 0 0 0 5.6z" />,
   delegate: <path d="M5.5 5h13a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM7.5 10l3 2.5-3 2.5M12.5 15.5h4" />,
   close: <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />,

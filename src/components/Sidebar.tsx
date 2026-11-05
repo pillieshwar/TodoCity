@@ -18,7 +18,8 @@ const OPEN_KEY = "todocity.projectsOpen";
 function savedOpen(): Set<string> {
   try {
     const v: unknown = JSON.parse(localStorage.getItem(OPEN_KEY) ?? "[]");
-    return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+    // One open at a time (several could be open before 0.4.85: keep the first).
+    return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 1) : []);
   } catch {
     return new Set();
   }
@@ -190,19 +191,15 @@ export function Sidebar(p: Props) {
   const hoverB = p.dropOn && p.dropOn.heading === undefined ? p.dropOn.project : null;
   useEffect(() => {
     if (!hoverB) return;
-    const t = window.setTimeout(() => setOpenB((s) => (s.has(hoverB) ? s : new Set(s).add(hoverB))), 550);
+    const t = window.setTimeout(() => setOpenB((s) => (s.has(hoverB) && s.size === 1 ? s : new Set([hoverB]))), 550);
     return () => window.clearTimeout(t);
   }, [hoverB]);
+  // One project open at a time: opening one folds the others away, so the
+  // sidebar keeps its room.
   useEffect(() => {
-    if (project) setOpenB((s) => (s.has(project) ? s : new Set(s).add(project)));
+    if (project) setOpenB((s) => (s.has(project) && s.size === 1 ? s : new Set([project])));
   }, [project]);
-  const toggle = (name: string) =>
-    setOpenB((s) => {
-      const n = new Set(s);
-      if (n.has(name)) n.delete(name);
-      else n.add(name);
-      return n;
-    });
+  const toggle = (name: string) => setOpenB((s) => (s.has(name) ? new Set() : new Set([name])));
   const done = () => {
     const v = text.trim();
     if (v && adding?.kind === "building") p.onNewBuilding(v);
@@ -276,6 +273,7 @@ export function Sidebar(p: Props) {
         <span className="sb-glide" ref={navGlide} aria-hidden />
         {item("today", "Today", "today", p.counts.today)}
         {item("upcoming", "Calendar", "calendar")}
+        {item("timeline", "Timeline", "timeline")}
         {item("inbox", "Inbox", "inbox", p.counts.inbox)}
         {item("overdue", "Overdue", "overdue", p.counts.overdue, true)}
         {item("logbook", "Completed", "done")}
@@ -364,7 +362,7 @@ export function Sidebar(p: Props) {
                       aria-label={`New section in ${name}`}
                       title="New section"
                       onClick={() => {
-                        setOpenB((s) => new Set(s).add(name));
+                        setOpenB(new Set([name]));
                         setAdding({ kind: "floor", project: name });
                       }}
                     >
@@ -400,7 +398,7 @@ export function Sidebar(p: Props) {
                       role="menuitem"
                       onClick={() => {
                         setMenu(null);
-                        setOpenB((s) => new Set(s).add(name));
+                        setOpenB(new Set([name]));
                         setAdding({ kind: "floor", project: name });
                       }}
                     >

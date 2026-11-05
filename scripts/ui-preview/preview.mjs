@@ -414,7 +414,15 @@ function mockTauri(s) {
     delete_project: () => true,
     set_project_color: (a) => {
       s.colors = { ...(s.colors ?? { "Offsite 2026": "#f08a3c", "Q4 launch": "#3fbf7f" }), [a.name]: a.color };
+      (window.__colored ??= []).push({ name: a.name, color: a.color });
+      setTimeout(() => window.__emit?.("tasks-changed", null), 0);
       return null;
+    },
+    set_project_plan: (a) => {
+      s.plans = { ...(s.plans ?? {}), [a.name]: a.start && a.end ? [a.start, a.end] : null };
+      (window.__plans ??= []).push({ name: a.name, start: a.start, end: a.end });
+      setTimeout(() => window.__emit?.("tasks-changed", null), 0);
+      return true;
     },
     delete_floor: () => true,
     add_floor: (a) => a.name,
@@ -546,10 +554,15 @@ function mockTauri(s) {
       const m = new Map();
       for (const t of [...s.tasks, ...(s.logbook ?? [])]) {
         if (!t.project) continue;
-        const p = m.get(t.project) ?? { name: t.project, open: 0, done: 0, color: (s.colors ?? { "Offsite 2026": "#f08a3c", "Q4 launch": "#3fbf7f" })[t.project] ?? null, synced: (s.synced ?? {})[t.project] ?? null };
+        const plan = (s.plans ?? {})[t.project] ?? null;
+        const p = m.get(t.project) ?? { name: t.project, open: 0, done: 0, color: (s.colors ?? { "Offsite 2026": "#f08a3c", "Q4 launch": "#3fbf7f" })[t.project] ?? null, synced: (s.synced ?? {})[t.project] ?? null, plan_start: plan?.[0] ?? null, plan_end: plan?.[1] ?? null };
         if (t.done) p.done += 1;
         else p.open += 1;
         m.set(t.project, p);
+      }
+      // Projects with no tasks here, like the real projects table: planned ones and colored ones.
+      for (const [name, plan] of Object.entries(s.plans ?? {})) {
+        if (!m.has(name)) m.set(name, { name, open: 0, done: 0, color: (s.colors ?? {})[name] ?? null, synced: null, plan_start: plan?.[0] ?? null, plan_end: plan?.[1] ?? null });
       }
       return [...m.values()];
     },
@@ -2047,6 +2060,117 @@ await shot("full-settings-avatar", FULL, full({ settings: LIGHT }), async (p) =>
   if (side !== now) throw new Error("the sidebar didn't follow the new avatar");
   await p.locator(".avatar-pick").getByRole("button", { name: "Back" }).click();
   await p.waitForFunction((was) => document.querySelector(".avatar-pick .mayor-badge.avatar img")?.getAttribute("src") === was, first);
+});
+// ── v0.4.85: the Timeline, projects as pastel bars across the months ──
+const PLANS = { "Offsite 2026": [day(-60), day(-10)], "Q4 launch": [day(5), day(70)], "Taxes 2026": [day(-20), day(40)] };
+const timelineOf = (o = {}) => full({ settings: LIGHT, plans: { ...PLANS }, ...o });
+const bar = (p, name) => p.locator(`.tl-item[data-project="${name}"]`);
+await shot("full-timeline", FULL, timelineOf(), async (p) => {
+  await side(/^Timeline/)(p);
+  await bar(p, "Offsite 2026").waitFor();
+  if ((await p.locator(".tl-row:not(.unplanned) .tl-item").count()) < 3) throw new Error("planned projects aren't on the timeline");
+  if (!(await p.locator(".tl-row.unplanned").count())) throw new Error("unplanned projects aren't listed");
+  if (!(await p.locator(".tl-now").count())) throw new Error("no today line");
+  if (await p.locator(".full-body > .side-pane").count()) throw new Error("the Timeline shows a side pane");
+  if (await p.locator(".pane-toggle").count()) throw new Error("the Timeline offers a side pane");
+  if (!(await p.locator(".tl-row", { hasText: "Offsite 2026" }).locator(".tl-due.late").count())) throw new Error("a project past its end with open tasks isn't marked");
+  const bg = await bar(p, "Q4 launch").evaluate((e) => getComputedStyle(e).backgroundColor);
+  // "rgb(220, 243, 232)" or "color(srgb 0.86 0.95 0.91)": every channel light.
+  const ch = bg.startsWith("color(") ? bg.match(/[\d.]+/g).slice(0, 3).map((v) => Number(v) * 255) : bg.match(/\d+/g).slice(0, 3).map(Number);
+  if (Math.min(...ch) < 170) throw new Error(`the bar isn't pastel (${bg})`);
+});
+await shot("full-timeline-dark", FULL, timelineOf({ settings: DARK }), async (p) => {
+  await side(/^Timeline/)(p);
+  await bar(p, "Offsite 2026").waitFor();
+});
+await shot("full-timeline-zoom-quarter", FULL, timelineOf(), async (p) => {
+  await side(/^Timeline/)(p);
+  await p.getByRole("radio", { name: "3 months" }).click();
+  await p.waitForTimeout(300);
+  if ((await p.locator(".tl-month").count()) > 5) throw new Error("3 months shows too many months");
+});
+const dragBy = async (p, loc, dx, at = "middle") => {
+  const b = await loc.boundingBox();
+  const x = at === "end" ? b.x + b.width - 1 : at === "start" ? b.x + 1 : b.x + b.width / 2;
+  const y = b.y + b.height / 2;
+  await p.mouse.move(x, y);
+  await p.mouse.down();
+  await p.mouse.move(x + dx / 3, y, { steps: 4 });
+  await p.mouse.move(x + dx, y, { steps: 8 });
+  await p.waitForTimeout(120);
+};
+const lastPlan = (p, name) => p.evaluate((n) => (window.__plans ?? []).filter((x) => x.name === n).pop(), name);
+const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+await shot("full-timeline-move", FULL, timelineOf(), async (p) => {
+  await side(/^Timeline/)(p);
+  const q = bar(p, "Q4 launch");
+  await q.waitFor();
+  const days = Number(await p.evaluate(() => 365));
+  const lane = await p.locator(".tl-months").boundingBox();
+  const ppd = lane.width / days;
+  await dragBy(p, q, ppd * 14);
+  if (!(await p.locator(".tl-tip").count())) throw new Error("no dates while dragging");
+  await p.mouse.up();
+  await p.waitForTimeout(250);
+  const pl = await lastPlan(p, "Q4 launch");
+  if (!pl) throw new Error("moving a bar saved nothing");
+  if (Math.abs(daysBetween(PLANS["Q4 launch"][0], pl.start) - 14) > 1) throw new Error(`moved ${daysBetween(PLANS["Q4 launch"][0], pl.start)} days, not 14`);
+  if (daysBetween(pl.start, pl.end) !== daysBetween(...PLANS["Q4 launch"])) throw new Error("moving a bar changed its length");
+});
+await shot("full-timeline-stretch", FULL, timelineOf(), async (p) => {
+  await side(/^Timeline/)(p);
+  const q = bar(p, "Q4 launch");
+  await q.waitFor();
+  const lane = await p.locator(".tl-months").boundingBox();
+  await dragBy(p, q.locator(".tl-grip.end"), (lane.width / 365) * 30);
+  await p.mouse.up();
+  await p.waitForTimeout(250);
+  const pl = await lastPlan(p, "Q4 launch");
+  if (!pl || pl.start !== PLANS["Q4 launch"][0]) throw new Error(`stretching the end moved the start: ${JSON.stringify(pl)}`);
+  if (Math.abs(daysBetween(PLANS["Q4 launch"][1], pl.end) - 30) > 1) throw new Error(`stretched ${daysBetween(PLANS["Q4 launch"][1], pl.end)} days, not 30`);
+});
+await shot("full-timeline-draw", FULL, timelineOf(), async (p) => {
+  await side(/^Timeline/)(p);
+  const row = p.locator(".tl-row.unplanned").first();
+  const name = (await row.locator(".tl-open").innerText()).trim();
+  const lane = row.locator(".tl-lane");
+  const b = await lane.boundingBox();
+  await p.mouse.move(b.x + b.width * 0.5, b.y + b.height / 2);
+  await p.mouse.down();
+  await p.mouse.move(b.x + b.width * 0.6, b.y + b.height / 2, { steps: 4 });
+  await p.mouse.move(b.x + b.width * 0.7, b.y + b.height / 2, { steps: 6 });
+  if (!(await p.locator(".tl-item.dragging").count())) throw new Error("no bar while drawing");
+  await p.mouse.up();
+  await p.waitForTimeout(250);
+  const pl = await lastPlan(p, name);
+  if (!pl || daysBetween(pl.start, pl.end) < 30) throw new Error(`drawing across a row didn't plan it: ${JSON.stringify(pl)}`);
+  await bar(p, name).waitFor();
+});
+await shot("full-timeline-open", FULL, timelineOf(), async (p) => {
+  await side(/^Timeline/)(p);
+  await bar(p, "Q4 launch").click();
+  await p.waitForTimeout(300);
+  if (!(await p.locator(".full-head").filter({ hasText: "Q4 launch" }).count())) throw new Error("clicking a bar didn't open its project");
+  if (await p.locator(".timeline").count()) throw new Error("still on the Timeline");
+});
+await shot("full-timeline-color", FULL, timelineOf(), async (p) => {
+  await side(/^Timeline/)(p);
+  await bar(p, "Q4 launch").click({ button: "right" });
+  const menu = p.locator(".tl-menu");
+  await menu.waitFor();
+  await menu.getByRole("radio", { name: "Pink" }).click();
+  await p.waitForFunction(() => (window.__colored ?? []).some((c) => c.name === "Q4 launch" && c.color === "#e463a6"));
+});
+// v0.4.85: one project open at a time in the sidebar.
+await shot("full-sidebar-one-open", FULL, full({ settings: LIGHT }), async (p) => {
+  const chev = (n) => p.locator(".sb-building", { hasText: n }).locator(".sb-chev").first();
+  await chev("Offsite 2026").click();
+  await p.waitForTimeout(300);
+  if ((await chev("Offsite 2026").getAttribute("aria-expanded")) !== "true") throw new Error("Offsite didn't open");
+  await chev("Q4 launch").click();
+  await p.waitForTimeout(300);
+  if ((await chev("Offsite 2026").getAttribute("aria-expanded")) !== "false") throw new Error("opening Q4 launch left Offsite open");
+  if ((await chev("Q4 launch").getAttribute("aria-expanded")) !== "true") throw new Error("Q4 launch didn't open");
 });
 await shot("motion-toast-undo-line", FULL, MOTION(), async (p) => {
   await p.locator(".task .check").first().click();

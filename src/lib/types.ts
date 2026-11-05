@@ -58,6 +58,9 @@ export interface ProjectSummary {
   color?: string | null;
   /** The app it's kept in sync with (`things3`, `todoist`). */
   synced?: string | null;
+  /** Its span on the Timeline (`YYYY-MM-DD`), if planned. */
+  plan_start?: string | null;
+  plan_end?: string | null;
 }
 
 /** Mirrors `todocity_core::NewTask` (created_tz is filled in by Rust). */

@@ -3189,7 +3189,9 @@ await shot("panel-focus-now", PANEL, scenario({ focus: FOCUS_BASE }), async (p) 
   if (!a || !a.start || !a.end) throw new Error("Focus now didn't add a block");
 });
 await shot("popover-focus-on", POP, scenario({ label: "popover", focus: FOCUS_ON }));
-await shot("full-week-focus-block", FULL, full({ settings: DARK, focus: FOCUS_ON, events: [...FULL_EVENTS, FOCUS_EVENT] }), async (p) => {
+// In the week's empty column (five days on), so the sample meetings never fold it into "+N" whatever the hour.
+const FOCUS_EVENT_LATER = { ...FOCUS_EVENT, id: "f2", start: localStamp(5 * 24 * 60 - 16), end: localStamp(5 * 24 * 60 + 34) };
+await shot("full-week-focus-block", FULL, full({ settings: DARK, focus: FOCUS_ON, events: [...FULL_EVENTS, FOCUS_EVENT_LATER] }), async (p) => {
   await side(/Calendar/)(p);
   if (!(await p.locator(".wg-event.focus-block").count())) throw new Error("the focus block isn't drawn as one");
 });

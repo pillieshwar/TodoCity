@@ -460,6 +460,7 @@ function mockTauri(s) {
     },
     term_start: (a) => {
       window.__termStart = a;
+      window.__termStarts = (window.__termStarts ?? 0) + 1;
       const task = a.taskId ? s.tasks.find((t) => t.id === a.taskId) : null;
       const names = { claude: "Claude Code", codex: "Codex", gemini: "Gemini CLI", cursor: "Cursor Agent" };
       const t = {
@@ -1511,6 +1512,9 @@ await shot("full-agents-connect-in-panel", FULL, full({ settings: LIGHT, agents:
   await p.locator(".agent-pane").waitFor();
   await p.waitForFunction(() => window.__connectInPanel === "codex" && window.__termStart?.agent === "codex");
   await p.locator(".ap-tab-activity").waitFor();
+  await p.waitForTimeout(400);
+  const starts = await p.evaluate(() => window.__termStarts);
+  if (starts !== 1) throw new Error(`Connect should start the agent once, started ${starts} times`);
 });
 await shot("full-agents-connect-app-activity", FULL, full({ settings: DARK, agents: AGENT_STATUS }), async (p) => {
   await p.locator(".sidebar").getByRole("button", { name: /^Settings/ }).click();

@@ -1,5 +1,6 @@
 import { weekStartForLocale } from "./calendar";
 import { setClock } from "./schedule";
+import { setAvatarSeed } from "./avatar";
 import type { AppSettings, LookSettings } from "./types";
 
 /** How TodoCity looks before (or without) any choices: the Mac's own calendar and clock. */
@@ -13,6 +14,7 @@ export const DEFAULT_LOOK: LookSettings = {
   city_motion: true,
   compact: true,
   mayor_look: "man",
+  avatar_seed: "",
   side_width: 0,
   side_open: true,
   show_done: false,
@@ -39,4 +41,5 @@ export function applyLook(look: LookSettings) {
   root.dataset.citySky = look.city_sky;
   root.dataset.cityMotion = look.city_motion ? "on" : "off";
   root.dataset.mayorLook = look.mayor_look;
+  setAvatarSeed(look.avatar_seed);
 }

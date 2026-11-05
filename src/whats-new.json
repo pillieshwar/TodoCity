@@ -1,7 +1,8 @@
 {
   "0.4.84": [
     "Calendar blocks are lighter: a soft wash of each color with a bright stripe, easy on the eyes in light and dark",
-    "Settings has a proper gear icon"
+    "Settings has a proper gear icon",
+    "A new avatar for you: a hand-drawn portrait on a sunrise background. In Settings → Your city, press Next until you find one you like"
   ],
   "0.4.83": [
     "Finish or delete a task and the ones below glide up smoothly, section headers too",

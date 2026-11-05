@@ -1,4 +1,5 @@
-import { MayorAvatar } from "./MayorAvatar";
+import { MayorAvatar, MayorFigure } from "./MayorAvatar";
+import { newSeed, seedOr } from "../lib/avatar";
 import { previewDone } from "../lib/doneSound";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
@@ -536,6 +537,14 @@ export function CityPage(props: SettingsProps) {
   const [mayor, setMayor] = useState(settings?.mayor_name ?? "");
   useEffect(() => setCity(settings?.city_name ?? ""), [settings?.city_name]);
   useEffect(() => setMayor(settings?.mayor_name ?? ""), [settings?.mayor_name]);
+  // The avatar: Next draws a new one (saved at once); Back returns to the one before.
+  const [seed, setSeed] = useState(() => seedOr(look.avatar_seed));
+  const [before, setBefore] = useState<string[]>([]);
+  useEffect(() => setSeed(seedOr(look.avatar_seed)), [look.avatar_seed]);
+  const pick = (next: string) => {
+    setSeed(next);
+    set({ avatar_seed: next });
+  };
   return (
     <section className="settings-section">
       <div className="card-stack">
@@ -571,9 +580,43 @@ export function CityPage(props: SettingsProps) {
             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
           />
         </ActionRow>
+        <div className="toggle-row static avatar-row">
+          <span className="toggle-text">
+            <span className="toggle-label">Your avatar</span>
+            <span className="toggle-hint">Shown in the sidebar and your city. Press Next until you find one you like.</span>
+          </span>
+          <div className="avatar-pick">
+            <MayorAvatar seed={seed} fallback={(mayor.trim()[0] ?? "M").toUpperCase()} size={64} />
+            <div className="avatar-pick-buttons">
+              <button
+                type="button"
+                className="ghost"
+                disabled={off || !before.length}
+                onClick={() => {
+                  const prev = before[before.length - 1];
+                  setBefore((b) => b.slice(0, -1));
+                  if (prev) pick(prev);
+                }}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={off}
+                onClick={() => {
+                  setBefore((b) => [...b.slice(-19), seed]);
+                  pick(newSeed());
+                }}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
         <div className="toggle-row static mayor-pick-row">
           <span className="toggle-text">
-            <span className="toggle-label">Mayor’s figure</span>
+            <span className="toggle-label">Mayor’s figure in the city</span>
           </span>
           <div className="mayor-pick" role="radiogroup" aria-label="Mayor’s figure">
             {(["man", "woman"] as const).map((m) => (
@@ -586,7 +629,7 @@ export function CityPage(props: SettingsProps) {
                 disabled={off}
                 onClick={() => set({ mayor_look: m })}
               >
-                <MayorAvatar look={m} fallback={m === "man" ? "M" : "W"} size={56} />
+                <MayorFigure look={m} fallback={m === "man" ? "M" : "W"} size={56} />
                 <span>{m === "man" ? "Man" : "Woman"}</span>
               </button>
             ))}

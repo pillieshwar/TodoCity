@@ -2030,6 +2030,24 @@ await shot("motion-delete-glide", FULL, MOTION(), async (p) => {
   // A row never slides over the header below it.
   if (g.some((x) => x.r !== null && x.r > x.h + 2)) throw new Error("a row overlapped the header below it");
 });
+// v0.4.84: the mayor's avatar is a Notionists portrait on a sunrise gradient; Next draws another.
+await shot("full-settings-avatar", FULL, full({ settings: LIGHT }), async (p) => {
+  await p.locator(".sidebar").getByRole("button", { name: /^Settings/ }).click();
+  await tab(p, "Your city");
+  const big = p.locator(".avatar-pick .mayor-badge.avatar img");
+  await big.waitFor();
+  const first = await big.getAttribute("src");
+  if (!first.startsWith("data:image/svg+xml")) throw new Error("the avatar isn't drawn on the Mac");
+  if (!(await p.locator(".sb-me .mayor-badge.avatar img").count())) throw new Error("the sidebar doesn't show the avatar");
+  await p.getByRole("button", { name: "Next" }).click();
+  await p.waitForFunction((was) => document.querySelector(".avatar-pick .mayor-badge.avatar img")?.getAttribute("src") !== was, first);
+  await p.waitForTimeout(300);
+  const side = await p.locator(".sb-me .mayor-badge.avatar img").getAttribute("src");
+  const now = await big.getAttribute("src");
+  if (side !== now) throw new Error("the sidebar didn't follow the new avatar");
+  await p.getByRole("button", { name: "Back" }).click();
+  await p.waitForFunction((was) => document.querySelector(".avatar-pick .mayor-badge.avatar img")?.getAttribute("src") === was, first);
+});
 await shot("motion-toast-undo-line", FULL, MOTION(), async (p) => {
   await p.locator(".task .check").first().click();
   const toast = p.locator(".toast", { hasText: "Completed" });

@@ -156,6 +156,8 @@ pub struct LookSettings {
     pub compact: bool,
     /// The mayor's figure: "man" or "woman".
     pub mayor_look: String,
+    /// The seed of the mayor's avatar (a DiceBear portrait drawn on the Mac); "" for the default.
+    pub avatar_seed: String,
     /// Width of full screen's right-hand pane, in points (0: the default).
     pub side_width: u32,
     /// Full screen's right-hand pane (calendar and hours) is open.
@@ -180,6 +182,7 @@ impl Default for LookSettings {
             city_motion: true,
             compact: true,
             mayor_look: "man".into(),
+            avatar_seed: String::new(),
             side_width: 0,
             side_open: true,
             show_done: false,
@@ -222,6 +225,12 @@ impl LookSettings {
             city_motion: self.city_motion,
             compact: self.compact,
             mayor_look: pick(self.mayor_look, &["man", "woman"], "man"),
+            avatar_seed: self
+                .avatar_seed
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .take(40)
+                .collect(),
             side_width: if self.side_width == 0 {
                 0
             } else {
@@ -429,10 +438,12 @@ mod tests {
             mayor_look: "robot".into(),
             side_width: 9000,
             show_source: "sometimes".into(),
+            avatar_seed: "ab c<script>9".into(),
             ..LookSettings::default()
         }
         .clean();
         assert_eq!(odd.mayor_look, "man");
+        assert_eq!(odd.avatar_seed, "abcscript9");
         assert_eq!(odd.show_source, "always");
         let hover = LookSettings {
             show_source: "hover".into(),

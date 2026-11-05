@@ -87,8 +87,6 @@ interface Props {
   onCity: () => void;
   cityName: string | null;
   mayor: string | null;
-  /** The mayor's figure, drawn in 3D. */
-  mayorLook: "man" | "woman";
   /** While a task is dragged: the building or floor under the pointer. */
   dropOn: { project: string; heading?: string | null } | null;
   dragging: boolean;
@@ -597,7 +595,7 @@ export function Sidebar(p: Props) {
       <div className="sb-foot">
         <div className="sb-me">
           <button type="button" className="sb-mayor" onClick={p.onCity} title="Open your city">
-            <MayorAvatar look={p.mayorLook} fallback={initials(p.mayor)} />
+            <MayorAvatar fallback={initials(p.mayor)} />
             <span className="sb-mayor-text">
               <span className="sb-mayor-title">{p.mayor ? `Mayor ${p.mayor}` : "The mayor"}</span>
               <span className="sb-mayor-sub">{p.cityName ?? "Name your city"}</span>

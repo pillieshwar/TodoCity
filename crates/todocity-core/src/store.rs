@@ -447,6 +447,11 @@ CREATE TABLE focus_tasks (
     PRIMARY KEY (block, task_id)
 );
 "#,
+    // Each project's span on the Timeline: first and last day (YYYY-MM-DD).
+    r#"
+ALTER TABLE projects ADD COLUMN plan_start TEXT;
+ALTER TABLE projects ADD COLUMN plan_end TEXT;
+"#,
 ];
 
 /// One task to bring in from another app, with its history.
@@ -515,6 +520,9 @@ pub struct ProjectSummary {
     pub color: Option<String>,
     /// The app it's kept in step with (`things3`, `todoist`), if any.
     pub synced: Option<String>,
+    /// Its span on the Timeline (first and last day), if planned.
+    pub plan_start: Option<String>,
+    pub plan_end: Option<String>,
 }
 
 pub struct Store {
@@ -926,7 +934,9 @@ impl Store {
         let mut stmt = self.conn.prepare(
             "SELECT p.name, COALESCE(SUM(t.done = 0), 0), COALESCE(SUM(t.done = 1), 0),
                     (SELECT color FROM projects c WHERE c.name = p.name),
-                    (SELECT source FROM mirror_projects m WHERE m.project = p.name AND m.stopped = 0 LIMIT 1)
+                    (SELECT source FROM mirror_projects m WHERE m.project = p.name AND m.stopped = 0 LIMIT 1),
+                    (SELECT plan_start FROM projects c WHERE c.name = p.name),
+                    (SELECT plan_end FROM projects c WHERE c.name = p.name)
              FROM (SELECT name FROM projects UNION SELECT project FROM tasks WHERE project IS NOT NULL) p
              LEFT JOIN tasks t ON t.project = p.name
              GROUP BY p.name ORDER BY p.name COLLATE NOCASE",
@@ -938,6 +948,8 @@ impl Store {
                 done: r.get(2)?,
                 color: r.get(3)?,
                 synced: r.get(4)?,
+                plan_start: r.get(5)?,
+                plan_end: r.get(6)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1034,6 +1046,40 @@ impl Store {
             params![name, color],
         )?;
         Ok(())
+    }
+
+    /// Put a project on the Timeline from `start` to `end` (`YYYY-MM-DD`,
+    /// either order), or take it off with `None`. Returns false, and changes
+    /// nothing, for a day that isn't a real date.
+    pub fn set_project_plan(
+        &self,
+        name: &str,
+        span: Option<(&str, &str)>,
+    ) -> Result<bool, StoreError> {
+        let day = |d: &str| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok();
+        let span = match span {
+            None => None,
+            Some((a, b)) => match (day(a), day(b)) {
+                (Some(a), Some(b)) => Some(if a <= b { (a, b) } else { (b, a) }),
+                _ => return Ok(false),
+            },
+        };
+        self.conn.execute(
+            "INSERT OR IGNORE INTO projects (name, created_at) VALUES (?1, ?2)",
+            params![name, now()],
+        )?;
+        let (start, end) = match span {
+            Some((a, b)) => (
+                Some(a.format("%Y-%m-%d").to_string()),
+                Some(b.format("%Y-%m-%d").to_string()),
+            ),
+            None => (None, None),
+        };
+        self.conn.execute(
+            "UPDATE projects SET plan_start = ?2, plan_end = ?3 WHERE name = ?1",
+            params![name, start, end],
+        )?;
+        Ok(true)
     }
 
     /// Take down an empty project (a building with no homes, done or not).
@@ -2338,9 +2384,37 @@ mod tests {
                 open: 1,
                 done: 3,
                 color: None,
-                synced: None
+                synced: None,
+                plan_start: None,
+                plan_end: None,
             }]
         );
+        // On the Timeline: either order, real days only, and off again.
+        assert!(s
+            .set_project_plan("P", Some(("2026-12-31", "2026-11-02")))
+            .unwrap());
+        let p = &s.projects().unwrap()[0];
+        assert_eq!(
+            (p.plan_start.as_deref(), p.plan_end.as_deref()),
+            (Some("2026-11-02"), Some("2026-12-31"))
+        );
+        assert!(!s
+            .set_project_plan("P", Some(("2026-02-30", "2026-03-01")))
+            .unwrap());
+        assert_eq!(
+            s.projects().unwrap()[0].plan_start.as_deref(),
+            Some("2026-11-02")
+        );
+        assert!(s
+            .set_project_plan("New", Some(("2027-01-01", "2027-03-31")))
+            .unwrap());
+        assert!(s
+            .projects()
+            .unwrap()
+            .iter()
+            .any(|p| p.name == "New" && p.plan_end.as_deref() == Some("2027-03-31")));
+        assert!(s.set_project_plan("P", None).unwrap());
+        assert_eq!(s.projects().unwrap()[0].plan_start, None);
         s.set_project_color("P", Some("#ff8800")).unwrap();
         assert_eq!(s.projects().unwrap()[0].color.as_deref(), Some("#ff8800"));
         s.set_project_color("P", Some("red; drop")).unwrap();

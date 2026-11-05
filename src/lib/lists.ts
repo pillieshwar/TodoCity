@@ -7,7 +7,7 @@ import type { Task } from "./types";
  * project), Overdue, Completed (`logbook`), or one project. "all" (Anytime)
  * and "someday" are older lists; they open Inbox now.
  */
-export type ListId = "all" | "today" | "upcoming" | "overdue" | "someday" | "logbook" | "inbox" | "agents" | `project:${string}`;
+export type ListId = "all" | "today" | "upcoming" | "timeline" | "overdue" | "someday" | "logbook" | "inbox" | "agents" | `project:${string}`;
 
 /** Lists that were folded into Inbox (Anytime, Someday). */
 export const normalizeList = (id: ListId): ListId => (id === "all" || id === "someday" ? "inbox" : id);
@@ -16,7 +16,7 @@ export const normalizeList = (id: ListId): ListId => (id === "all" || id === "so
 export function listTitle(id: ListId): string {
   return (
     projectOf(id) ??
-    { all: "Inbox", inbox: "Inbox", today: "Today", upcoming: "Calendar", overdue: "Overdue", someday: "Inbox", logbook: "Completed", agents: "With agents" }[id as "all"]
+    { all: "Inbox", inbox: "Inbox", today: "Today", upcoming: "Calendar", timeline: "Timeline", overdue: "Overdue", someday: "Inbox", logbook: "Completed", agents: "With agents" }[id as "all"]
   );
 }
 

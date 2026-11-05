@@ -225,6 +225,28 @@ fn set_project_color(app: AppHandle, name: String, color: Option<String>) -> Cmd
     Ok(())
 }
 
+/// Put a project on the Timeline from `start` to `end` (`YYYY-MM-DD`), or
+/// take it off when both are missing.
+#[tauri::command]
+fn set_project_plan(
+    app: AppHandle,
+    name: String,
+    start: Option<String>,
+    end: Option<String>,
+) -> CmdResult<bool> {
+    let ok = {
+        let state = app.state::<AppState>();
+        let store = state.store.lock().map_err(err)?;
+        let span = match (start.as_deref(), end.as_deref()) {
+            (Some(a), Some(b)) => Some((a, b)),
+            _ => None,
+        };
+        store.set_project_plan(&name, span).map_err(err)?
+    };
+    let _ = app.emit("tasks-changed", ());
+    Ok(ok)
+}
+
 /// Every task in a project, done ones too.
 #[tauri::command]
 fn project_tasks(state: State<'_, AppState>, project: String) -> CmdResult<Vec<Task>> {
@@ -1780,6 +1802,7 @@ pub fn run() {
             rename_floor,
             project_tasks,
             set_project_color,
+            set_project_plan,
             delete_project,
             delete_floor,
             skip_occurrence,

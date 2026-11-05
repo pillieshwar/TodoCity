@@ -1,4 +1,10 @@
 {
+  "0.4.85": [
+    "New: Timeline. See your projects as soft pastel bars across the months, drag them to move, stretch their ends, and click one to open it",
+    "Drag across an empty row on the Timeline to plan a project; right-click a bar to pick its color",
+    "Calendar colors are softer pastels",
+    "Opening a project in the sidebar folds the others away, so there's more room"
+  ],
   "0.4.84": [
     "Calendar blocks are lighter: a soft wash of each color with a bright stripe, easy on the eyes in light and dark",
     "Settings has a proper gear icon",

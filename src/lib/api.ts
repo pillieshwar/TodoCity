@@ -61,6 +61,8 @@ export const api = {
   renameFloor: (project: string, from: string, to: string) => invoke<number>("rename_floor", { project, from, to }),
   /** Give a project its own color (`#rrggbb`), or clear it with null. */
   setProjectColor: (name: string, color: string | null) => invoke<void>("set_project_color", { name, color }),
+  /** Put a project on the Timeline (`YYYY-MM-DD` to `YYYY-MM-DD`), or take it off with nulls. */
+  setProjectPlan: (name: string, start: string | null, end: string | null) => invoke<boolean>("set_project_plan", { name, start, end }),
   /** Every task in a project, done ones too. */
   projectTasks: (project: string) => invoke<Task[]>("project_tasks", { project }),
   /** Take down an empty project (false while it has tasks). */

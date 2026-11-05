@@ -16,6 +16,7 @@ import { cheerFor, newMilestones, type Milestone } from "./lib/milestones";
 import { CITY, PLAIN, WordsContext } from "./lib/words";
 import { WeekGrid, sevenDays } from "./components/WeekGrid";
 import { BlockPop } from "./components/BlockPop";
+import { Timeline } from "./components/Timeline";
 import { TaskMenuHost } from "./components/TaskMenu";
 import { CALENDAR_NEW_MIN } from "./lib/timeblock";
 import { MonthCalendar } from "./components/MonthCalendar";
@@ -222,6 +223,15 @@ export default function App() {
   const [todayMode, setTodayMode] = useState<TodayMode>(() => saved("todocity.todayMode", ["list", "hours"], "list"));
   useEffect(() => remember("todocity.todayMode", todayMode), [todayMode]);
   const upcoming = list === "upcoming";
+  // The Timeline (full screen only): projects across months.
+  const timeline = list === "timeline";
+  // The side panel is too narrow for it: going back to the panel from the
+  // Timeline opens Today.
+  const wasFull = useRef(full);
+  useEffect(() => {
+    if (wasFull.current && !full && timeline) setList("today");
+    wasFull.current = full;
+  }, [full, timeline, setList]);
   // Full screen always shows Today with its hours beside the list.
   const todayHours = list === "today" && (full || todayMode === "hours");
   // The task list shows except in the week — and in full screen, Today's
@@ -338,7 +348,11 @@ export default function App() {
       .catch(() => undefined);
     api
       .panelFull()
-      .then((f) => setFull(!!f))
+      .then((f) => {
+        setFull(!!f);
+        // The Timeline is full screen's; the panel opens on Today instead.
+        if (!f) setList((l) => (l === "timeline" ? "today" : l));
+      })
       .catch(() => undefined);
   }, [checkStatus]);
 
@@ -659,8 +673,8 @@ export default function App() {
       setAgentPane(false);
       if (paneShown) return;
     }
-    // Calendar has no side pane: a task's details open beside its block.
-    if (calView) return;
+    // Calendar and the Timeline have no side pane.
+    if (calView || timeline) return;
     if (boardView) setBoardPane((o) => !o);
     else if (calView)
       setCalPane((o) => {
@@ -1177,7 +1191,7 @@ export default function App() {
   })();
   // Full screen's header says only what nothing else on screen says: the
   // day on Today, the week on Calendar. Counts live in the sidebar.
-  const fullSub = tab !== "tasks" ? "" : list === "today" && !floorOpen ? now.toLocaleDateString(LOCALE, { weekday: "long", month: "short", day: "numeric" }) : upcoming ? rangeText : "";
+  const fullSub = tab !== "tasks" ? "" : list === "today" && !floorOpen ? now.toLocaleDateString(LOCALE, { weekday: "long", month: "short", day: "numeric" }) : upcoming ? rangeText : timeline ? "Your projects across the months" : "";
   const subText =
     tab !== "tasks"
       ? page === "model"
@@ -1612,7 +1626,7 @@ export default function App() {
     );
     // Calendar has no side pane (the agents' panel only when asked for): a
     // task's details open beside its block instead.
-    const weekShown = upcoming && tasksShown;
+    const weekShown = (upcoming || timeline) && tasksShown;
     const sidePane = !tasksShown ? null : weekShown ? (agentPane ? agentEl : null) : openTask && !inList ? (
       <TaskDetail
         task={openTask}
@@ -1935,12 +1949,12 @@ export default function App() {
                 <SearchIcon />
               </button>
             )}
-            {tasksShown && list !== "logbook" && (
+            {tasksShown && list !== "logbook" && !timeline && (
               <button type="button" className="primary fh-new" onClick={() => setAdding(true)} title="New task (A)">
                 <PlusIcon /> {w.addButton}
               </button>
             )}
-            {tasksShown && list !== "logbook" && !upcoming && (
+            {tasksShown && list !== "logbook" && !upcoming && !timeline && (
               <button
                 type="button"
                 className={paneShown ? "icon pane-toggle" : "icon pane-toggle on"}
@@ -1980,7 +1994,31 @@ export default function App() {
 
           {tab === "tasks" ? (
             <div className={sidePane ? "full-body with-side" : "full-body"}>
-              {upcoming && tasksShown ? (
+              {timeline && tasksShown ? (
+                <main className="full-content timeline-page view-fade">
+                  <Timeline
+                    projects={mode ? projectStats.filter((p) => showsTask(mode, { project: p.name })) : projectStats}
+                    today={today}
+                    locale={LOCALE}
+                    onOpen={(name) => setList(projectList(name))}
+                    onPlan={(name, span) =>
+                      api
+                        .setProjectPlan(name, span?.start ?? null, span?.end ?? null)
+                        .then(() => refresh())
+                        .catch((e) => {
+                          setError(String(e));
+                          throw e;
+                        })
+                    }
+                    onColor={(name, color) =>
+                      void api
+                        .setProjectColor(name, color)
+                        .then(() => refresh())
+                        .catch((e) => setError(String(e)))
+                    }
+                  />
+                </main>
+              ) : upcoming && tasksShown ? (
                 <main className="full-content week view-fade">
                   {adding && (
                     <AddTaskForm
@@ -2341,7 +2379,7 @@ export default function App() {
 /** The page's icon in full screen's header: a project's ring, or the list's line icon. */
 function HeadIcon({ list, color }: { list: ListId; color?: string }) {
   if (projectOf(list) !== null) return <i className="fh-ring" style={color ? { borderColor: color } : undefined} />;
-  const name = list === "today" ? "today" : list === "upcoming" ? "calendar" : list === "logbook" ? "done" : list === "overdue" ? "overdue" : list === "agents" ? "delegate" : "inbox";
+  const name = list === "today" ? "today" : list === "upcoming" ? "calendar" : list === "timeline" ? "timeline" : list === "logbook" ? "done" : list === "overdue" ? "overdue" : list === "agents" ? "delegate" : "inbox";
   return <LineIcon name={name} size={20} />;
 }
 

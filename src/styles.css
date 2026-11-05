@@ -3720,32 +3720,39 @@ h1, h2, h3, .empty-big, .story-card h2 { text-wrap: balance; }
 
 /* ── Calendar, the Outlook way (0.4.82) ──────────────────────────────────────
    Taller hours with a dashed half-hour line; blocks filled with their color
-   (white or dark text, whichever reads: blockColor.ts) showing just the title;
+   (a soft wash with a stripe; see below) showing just the title;
    a dragged task's copy, the same size, where it will land; and a task's
    details opening beside its block (BlockPop.tsx). */
-/* Text on the accent color: white on the light theme's deep purple, dark on the dark theme's light one. */
-:root { --on-teal: #fff; }
-:root[data-theme="dark"] { --on-teal: #17132e; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --on-teal: #17132e; } }
+/* Blocks are a soft wash of their color with a solid stripe on the left, and
+   text in a deep (light theme) or pale (dark theme) tone of the same hue —
+   readable on every color, never a heavy slab. */
+.week-grid { --tint: 18%; --tint-hover: 26%; --ink-base: #16161a; --ink-amt: 62%; }
+:root[data-theme="dark"] .week-grid { --tint: 22%; --tint-hover: 30%; --ink-base: #fff; --ink-amt: 38%; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .week-grid { --tint: 22%; --tint-hover: 30%; --ink-base: #fff; --ink-amt: 38%; }
+}
 .wg-body .wg-cell::after {
   content: ""; position: absolute; left: 0; right: 0; top: 50%; z-index: 0; pointer-events: none;
   border-top: 1px dashed color-mix(in srgb, var(--line) 90%, transparent);
 }
 .wg-cell > .wg-add { position: absolute; left: 4px; right: 4px; z-index: 6; }
 .week-grid .wg-task, .week-grid .wg-event {
-  background: var(--fill, var(--teal)); color: var(--on, #fff);
-  border: 0; border-left: 3px solid color-mix(in srgb, var(--fill, var(--teal)) 60%, #000); border-radius: 6px;
-  box-shadow: none; transition: opacity 300ms, transform 300ms, filter var(--dur-1);
+  --block-ink: color-mix(in srgb, var(--fill, var(--teal)) var(--ink-amt), var(--ink-base));
+  background: color-mix(in srgb, var(--fill, var(--teal)) var(--tint), var(--paper)); color: var(--block-ink);
+  border: 0; border-left: 3px solid var(--fill, var(--teal)); border-radius: 6px;
+  box-shadow: none; transition: opacity 300ms, transform 300ms, background var(--dur-1);
 }
 .week-grid .wg-task:hover, .week-grid .wg-event:hover {
-  filter: brightness(1.07); border-color: transparent; border-left-color: color-mix(in srgb, var(--fill, var(--teal)) 60%, #000);
+  background: color-mix(in srgb, var(--fill, var(--teal)) var(--tint-hover), var(--paper));
+  border-color: transparent; border-left-color: var(--fill, var(--teal));
 }
 .week-grid .wg-task.late, .week-grid .wg-task.deadline { border-left-color: var(--accent); }
 .week-grid .wg-task.picked, .week-grid .wg-task.picked:hover {
-  background: var(--fill, var(--teal)); box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--fill, var(--teal));
+  background: color-mix(in srgb, var(--fill, var(--teal)) var(--tint-hover), var(--paper));
+  box-shadow: 0 0 0 1.5px var(--fill, var(--teal));
 }
-.week-grid .wg-title, .week-grid .wg-event-title { color: var(--on, #fff); font-weight: 600; font-size: 12px; line-height: 15px; }
-.week-grid .wg-span, .week-grid .wg-event-time, .week-grid .wg-late, .week-grid .wg-time { color: color-mix(in srgb, var(--on, #fff) 82%, transparent); }
+.week-grid .wg-title, .week-grid .wg-event-title { color: var(--block-ink); font-weight: 600; font-size: 12px; line-height: 15px; }
+.week-grid .wg-span, .week-grid .wg-event-time, .week-grid .wg-late, .week-grid .wg-time { color: color-mix(in srgb, var(--block-ink) 78%, transparent); }
 /* The title wraps over the lines that fit (--lines), then "…". */
 .week-grid .wg-task.wg-block .wg-t, .week-grid .wg-event.wg-block .wg-event-title {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--lines, 2); white-space: normal;
@@ -3756,9 +3763,9 @@ h1, h2, h3, .empty-big, .story-card h2 { text-wrap: balance; }
 }
 .week-grid .wg-event.wg-block { padding: 4px 7px 4px 6px; }
 .week-grid .wg-event.wg-block.tiny { padding-top: 2px; padding-bottom: 2px; }
-.week-grid .wg-task .plan-check { border-color: color-mix(in srgb, var(--on, #fff) 75%, transparent); }
-.week-grid .wg-task .plan-check:hover { border-color: var(--on, #fff); color: var(--on, #fff); background: color-mix(in srgb, var(--on, #fff) 16%, transparent); }
-.week-grid .wg-task.completing .plan-check { background: var(--on, #fff); border-color: var(--on, #fff); color: var(--fill, var(--teal)); }
+.week-grid .wg-task .plan-check { border-color: color-mix(in srgb, var(--block-ink) 70%, transparent); }
+.week-grid .wg-task .plan-check:hover { border-color: var(--fill, var(--teal)); color: var(--fill, var(--teal)); background: color-mix(in srgb, var(--fill, var(--teal)) 14%, transparent); }
+.week-grid .wg-task.completing .plan-check { background: var(--fill, var(--teal)); border-color: var(--fill, var(--teal)); color: var(--paper); }
 .week-grid .wg-event.focus-block {
   background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--teal) 18%, transparent) 0 6px, color-mix(in srgb, var(--teal) 10%, transparent) 6px 12px);
   border-left-color: var(--teal);
@@ -3769,7 +3776,8 @@ h1, h2, h3, .empty-big, .story-card h2 { text-wrap: balance; }
 .week-grid .wg-task.lifted { opacity: 0.35; filter: none; }
 .wg-shadow {
   z-index: 6; pointer-events: none; cursor: grabbing;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24), 0 0 0 1px color-mix(in srgb, var(--on, #fff) 30%, transparent);
+  background: color-mix(in srgb, var(--fill, var(--teal)) var(--tint-hover), var(--paper));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2), 0 0 0 1px color-mix(in srgb, var(--fill, var(--teal)) 45%, transparent);
   transition: top 90ms var(--ease);
 }
 .week-grid .wg-shadow .wg-title { display: flex; flex-direction: column; }
@@ -3808,6 +3816,18 @@ h1, h2, h3, .empty-big, .story-card h2 { text-wrap: balance; }
 .task-menu button.danger { color: var(--danger, #e5484d); }
 .task-menu button.danger:hover, .task-menu button.danger:focus-visible { background: var(--danger, #e5484d); color: #fff; }
 .task-menu-sep { height: 1px; margin: 4px 6px; background: var(--line); }
+
+/* The mayor's avatar (a DiceBear Notionists portrait on a sunrise gradient). */
+.mayor-badge.avatar { overflow: hidden; background: linear-gradient(135deg, #ffd9b0, #ffa8bf); padding: 0; }
+.mayor-badge.avatar img { display: block; width: 100%; height: 100%; }
+.avatar-row { align-items: center; }
+.avatar-pick { display: flex; align-items: center; gap: 14px; flex: none; }
+.avatar-pick .mayor-badge { border-radius: 16px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12); font-size: 22px; }
+.avatar-pick-buttons { display: flex; flex-direction: column; gap: 6px; }
+.avatar-pick-buttons button { min-width: 78px; height: 28px; border-radius: 7px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.avatar-pick-buttons .primary { border: 1px solid var(--teal); background: var(--teal); color: #fff; }
+.avatar-pick-buttons .ghost { border: 1px solid var(--line); background: transparent; color: var(--ink); }
+.avatar-pick-buttons button:disabled { opacity: 0.45; cursor: default; }
 
 /* "Reduce motion" on: everything above (and before) is instant. */
 @media (prefers-reduced-motion: reduce) {

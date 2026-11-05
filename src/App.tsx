@@ -1735,7 +1735,6 @@ export default function App() {
             onCity={() => setCityOpen("view")}
             cityName={settings?.city_name ?? null}
             mayor={settings?.mayor_name ?? null}
-            mayorLook={look.mayor_look}
             dropOn={drag.drag?.over?.place ?? null}
             dragging={!!drag.drag}
             lit={city.total}

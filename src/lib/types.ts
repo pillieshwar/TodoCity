@@ -232,6 +232,8 @@ export interface LookSettings {
   compact: boolean;
   /** The mayor's figure in the city and the sidebar. */
   mayor_look: "man" | "woman";
+  /** The seed of the mayor's avatar (src/lib/avatar.ts); "" for the default. */
+  avatar_seed: string;
   /** Full screen's right-hand pane width in points (0: the default). */
   side_width: number;
   /** Full screen's right-hand pane is open. */

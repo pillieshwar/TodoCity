@@ -2039,13 +2039,13 @@ await shot("full-settings-avatar", FULL, full({ settings: LIGHT }), async (p) =>
   const first = await big.getAttribute("src");
   if (!first.startsWith("data:image/svg+xml")) throw new Error("the avatar isn't drawn on the Mac");
   if (!(await p.locator(".sb-me .mayor-badge.avatar img").count())) throw new Error("the sidebar doesn't show the avatar");
-  await p.getByRole("button", { name: "Next" }).click();
+  await p.locator(".avatar-pick").getByRole("button", { name: "Next" }).click();
   await p.waitForFunction((was) => document.querySelector(".avatar-pick .mayor-badge.avatar img")?.getAttribute("src") !== was, first);
   await p.waitForTimeout(300);
   const side = await p.locator(".sb-me .mayor-badge.avatar img").getAttribute("src");
   const now = await big.getAttribute("src");
   if (side !== now) throw new Error("the sidebar didn't follow the new avatar");
-  await p.getByRole("button", { name: "Back" }).click();
+  await p.locator(".avatar-pick").getByRole("button", { name: "Back" }).click();
   await p.waitForFunction((was) => document.querySelector(".avatar-pick .mayor-badge.avatar img")?.getAttribute("src") === was, first);
 });
 await shot("motion-toast-undo-line", FULL, MOTION(), async (p) => {
@@ -2280,7 +2280,9 @@ await shot("full-mayor-pick", FULL, full({ settings: DARK }), async (p) => {
   await tab(p, "Your city");
   await p.getByRole("radio", { name: /Woman/ }).click();
   await p.waitForTimeout(300);
-  if (!(await p.locator(".sb-mayor .mayor-badge.figure img").count())) throw new Error("no 3D mayor in the sidebar");
+  // v0.4.84: the picker shows the 3D figure that walks in the city; the sidebar shows the avatar.
+  if (!(await p.getByRole("radio", { name: /Woman/ }).locator(".mayor-badge.figure img").count())) throw new Error("no 3D mayor in the picker");
+  if (!(await p.locator(".sb-mayor .mayor-badge.avatar img").count())) throw new Error("no avatar in the sidebar");
 });
 await shot("full-city-mayor-woman", FULL, full({ settings: { ...DARK, look: { ...(DARK.look ?? {}), mayor_look: "woman" } } }), async (p) => {
   await p.locator(".sb-mayor").click();

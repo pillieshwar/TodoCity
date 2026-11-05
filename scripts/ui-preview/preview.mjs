@@ -2075,8 +2075,9 @@ await shot("full-timeline", FULL, timelineOf(), async (p) => {
   if (await p.locator(".pane-toggle").count()) throw new Error("the Timeline offers a side pane");
   if (!(await p.locator(".tl-row", { hasText: "Offsite 2026" }).locator(".tl-due.late").count())) throw new Error("a project past its end with open tasks isn't marked");
   const bg = await bar(p, "Q4 launch").evaluate((e) => getComputedStyle(e).backgroundColor);
-  const [r, g, b] = bg.match(/\d+/g).map(Number);
-  if (Math.min(r, g, b) < 170) throw new Error(`the bar isn't pastel (${bg})`);
+  // "rgb(220, 243, 232)" or "color(srgb 0.86 0.95 0.91)": every channel light.
+  const ch = bg.startsWith("color(") ? bg.match(/[\d.]+/g).slice(0, 3).map((v) => Number(v) * 255) : bg.match(/\d+/g).slice(0, 3).map(Number);
+  if (Math.min(...ch) < 170) throw new Error(`the bar isn't pastel (${bg})`);
 });
 await shot("full-timeline-dark", FULL, timelineOf({ settings: DARK }), async (p) => {
   await side(/^Timeline/)(p);

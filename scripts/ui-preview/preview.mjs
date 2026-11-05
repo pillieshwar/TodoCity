@@ -385,13 +385,59 @@ function mockTauri(s) {
     autostart_enabled: () => true,
     panel_full: () => !!s.full,
     // v0.4.66: the agent panel and "Send to agent".
-    agent_clis: () =>
-      s.clis ?? [
-        { id: "claude", name: "Claude Code", installed: true },
+    agent_clis: (a) => {
+      if (a?.refresh) window.__scanned = (window.__scanned ?? 0) + 1;
+      return (s.clis ??= [
+        { id: "claude", name: "Claude Code", installed: true, slack: true },
         { id: "codex", name: "Codex", installed: true },
         { id: "gemini", name: "Gemini CLI", installed: false },
         { id: "cursor", name: "Cursor Agent", installed: false },
-      ],
+      ]);
+    },
+    // v0.4.87: agent cards, Add agent…, the default agent, Connect in the panel, Activity.
+    agents_add_custom: () => {
+      const c = { id: "custom:aider", name: "Aider", installed: true, custom: true, path: "/Users/sam/.local/bin/aider", slack: false, default: false };
+      s.clis = [...(s.clis ?? []), c];
+      setTimeout(() => window.__emit?.("agent-changes", null), 0);
+      return c;
+    },
+    agents_remove_custom: (a) => {
+      s.clis = (s.clis ?? []).filter((c) => c.id !== a.id);
+      setTimeout(() => window.__emit?.("agent-changes", null), 0);
+    },
+    agents_set_default: (a) => {
+      window.__defaultAgent = a.id;
+      s.agents = { ...s.agents, default_agent: a.id };
+      s.clis = (s.clis ?? []).map((c) => ({ ...c, default: c.id === a.id }));
+      setTimeout(() => window.__emit?.("agent-changes", null), 0);
+    },
+    agent_panel_open: (a) => {
+      setTimeout(() => window.__emit?.("agent-panel-open", { agent: a.agent, prompt: a.prompt, activity: !a.agent }), 0);
+    },
+    agents_connect_in_panel: (a) => {
+      window.__connectInPanel = a.id;
+      const cli = { claude_code: "claude", codex: "codex", gemini_cli: "gemini" }[a.id] ?? (a.id.startsWith("custom:") ? a.id : null);
+      const app = (s.agents.apps ?? []).find((x) => x.id === a.id);
+      const name = app?.name ?? a.id;
+      s.agents = { ...s.agents, enabled: true, apps: s.agents.apps.map((x) => (x.id === a.id ? { ...x, connected: true } : x)) };
+      const now = new Date();
+      const at = (d) => new Date(now.getTime() + d * 1000).toISOString().slice(0, 19);
+      const lines = [
+        { id: 900, at: at(0), source: "agents", agent: cli ?? a.id, kind: "working", text: `Connecting ${name}…` },
+        { id: 901, at: at(1), source: "agents", agent: cli ?? a.id, kind: "ok", text: `Connected ${name}: TodoCity is in its MCP settings. ${app?.restart_hint ?? ""}` },
+      ];
+      s.console = [...(s.console ?? []), ...lines];
+      setTimeout(() => {
+        for (const l of lines) window.__emit?.("agent-console", l);
+        window.__emit?.("agent-changes", null);
+        window.__emit?.("agent-panel-open", { agent: cli, prompt: cli ? "TodoCity, my to-do app, has just connected itself to you through MCP." : null, activity: !cli });
+      }, 0);
+    },
+    agent_console: () => s.console ?? [],
+    agent_console_clear: () => {
+      s.console = [];
+      setTimeout(() => window.__emit?.("agent-console-cleared", null), 0);
+    },
     agent_run_list: () => s.runs ?? [],
     agent_run_transcript: (a) => (s.transcripts ?? {})[a.id] ?? null,
     agent_run_dismiss: (a) => {
@@ -414,6 +460,7 @@ function mockTauri(s) {
     },
     term_start: (a) => {
       window.__termStart = a;
+      window.__termStarts = (window.__termStarts ?? 0) + 1;
       const task = a.taskId ? s.tasks.find((t) => t.id === a.taskId) : null;
       const names = { claude: "Claude Code", codex: "Codex", gemini: "Gemini CLI", cursor: "Cursor Agent" };
       const t = {
@@ -1438,6 +1485,43 @@ await shot("full-watch-no-agents", FULL, full({ settings: LIGHT, watch: { ...WAT
   await p.locator(".watch-page").getByRole("button", { name: "Agents", exact: true }).click();
   await p.locator(".set-subhead", { hasText: "Your agents" }).waitFor();
 });
+// v0.4.87: Settings → Agents shows every agent as a card; Check for agents, Add agent…, a default.
+await shot("panel-agents-cards", PANEL, scenario({ agents: AGENTS_ON }), async (p) => {
+  await tab(p, "Agents");
+  const cards = p.locator(".agent-card");
+  await cards.first().waitFor();
+  const names = (await cards.locator(".agent-card-name b").allTextContents()).map((t) => t.trim());
+  if (names[0] !== "Claude Code") throw new Error(`connected first: ${names.join("|")}`);
+  for (const n of ["Codex", "Claude Desktop", "Cursor"]) if (!names.includes(n)) throw new Error(`${n} missing: ${names.join("|")}`);
+  if (!(await cards.first().getByText("Has Slack").count())) throw new Error("Claude Code's Slack isn't shown");
+  await p.getByRole("button", { name: "Check for agents" }).click();
+  await p.getByText(/^Found \d+ agents on this Mac\.$/).waitFor();
+  if (!(await p.evaluate(() => window.__scanned))) throw new Error("Check for agents didn't look again");
+  await p.getByRole("button", { name: "Add agent…" }).click();
+  await p.locator(".agent-card", { hasText: "Aider" }).waitFor();
+  await p.getByText("Added Aider. Choose Connect to let it use TodoCity.").waitFor();
+  await p.getByRole("combobox", { name: "Default agent" }).selectOption("codex");
+  await p.waitForFunction(() => window.__defaultAgent === "codex");
+  await p.locator(".agent-card.is-default", { hasText: "Codex" }).waitFor();
+  await p.locator(".agent-cards").scrollIntoViewIfNeeded();
+});
+await shot("full-agents-connect-in-panel", FULL, full({ settings: LIGHT, agents: AGENT_STATUS }), async (p) => {
+  await p.locator(".sidebar").getByRole("button", { name: /^Settings/ }).click();
+  await tab(p, "Agents");
+  await p.locator(".agent-card", { hasText: "Codex" }).getByRole("button", { name: "Connect" }).click();
+  await p.locator(".agent-pane").waitFor();
+  await p.waitForFunction(() => window.__connectInPanel === "codex" && window.__termStart?.agent === "codex");
+  await p.locator(".ap-tab-activity").waitFor();
+  await p.waitForTimeout(400);
+  const starts = await p.evaluate(() => window.__termStarts);
+  if (starts !== 1) throw new Error(`Connect should start the agent once, started ${starts} times`);
+});
+await shot("full-agents-connect-app-activity", FULL, full({ settings: DARK, agents: AGENT_STATUS }), async (p) => {
+  await p.locator(".sidebar").getByRole("button", { name: /^Settings/ }).click();
+  await tab(p, "Agents");
+  await p.locator(".agent-card", { hasText: "Claude Desktop" }).getByRole("button", { name: "Connect" }).click();
+  await p.locator(".ap-activity").getByText(/Connected Claude Desktop/).waitFor();
+}, true);
 // v0.4.86: the Slack connector — one switch; the agent checks Slack in the panel.
 const SLACK_READY = {
   enabled: true,
@@ -3105,7 +3189,9 @@ await shot("panel-focus-now", PANEL, scenario({ focus: FOCUS_BASE }), async (p) 
   if (!a || !a.start || !a.end) throw new Error("Focus now didn't add a block");
 });
 await shot("popover-focus-on", POP, scenario({ label: "popover", focus: FOCUS_ON }));
-await shot("full-week-focus-block", FULL, full({ settings: DARK, focus: FOCUS_ON, events: [...FULL_EVENTS, FOCUS_EVENT] }), async (p) => {
+// In the week's empty column (five days on), so the sample meetings never fold it into "+N" whatever the hour.
+const FOCUS_EVENT_LATER = { ...FOCUS_EVENT, id: "f2", start: localStamp(5 * 24 * 60 - 16), end: localStamp(5 * 24 * 60 + 34) };
+await shot("full-week-focus-block", FULL, full({ settings: DARK, focus: FOCUS_ON, events: [...FULL_EVENTS, FOCUS_EVENT_LATER] }), async (p) => {
   await side(/Calendar/)(p);
   if (!(await p.locator(".wg-event.focus-block").count())) throw new Error("the focus block isn't drawn as one");
 });

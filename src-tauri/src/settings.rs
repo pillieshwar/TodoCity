@@ -89,6 +89,11 @@ pub struct AppSettings {
     /// Full access: connected agents can read, add, change, complete and
     /// delete tasks, projects and sections, with no review. Off by default.
     pub agents_full_access: bool,
+    /// The agent used when nothing else says which (Slack, the agent panel,
+    /// Send to agent), by id.
+    pub default_agent: Option<String>,
+    /// Command-line agents the person added from their Mac.
+    pub custom_agents: Vec<todocity_core::agent_setup::CustomAgent>,
     /// Notice to-dos in Slack and Outlook as they appear on screen.
     pub watch: WatchSettings,
     /// How TodoCity looks and behaves, as the user likes it.
@@ -326,6 +331,8 @@ impl Default for AppSettings {
             agents_enabled: false,
             agents_proactive: true,
             agents_full_access: false,
+            default_agent: None,
+            custom_agents: Vec::new(),
             watch: WatchSettings::default(),
             look: LookSettings::default(),
             modes: ViewMode::defaults(),

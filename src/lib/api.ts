@@ -24,6 +24,8 @@ import type {
   FocusStatus,
   AgentChange,
   AgentCliStatus,
+  ActivityEntry,
+  PanelRequest,
   AgentRun,
   TermSession,
   CityWindow,
@@ -175,6 +177,18 @@ export const api = {
     invoke<number>("agent_undo", { change: what.change ?? null, batch: what.batch ?? null, tasks: what.tasks ?? null }),
   /** One app by id, or "all" installed apps. Also turns agent access on. */
   agentsConnect: (id: string) => invoke<AgentsStatus>("agents_connect", { id }),
+  /** Connect an agent with the agent panel open: it starts there to check, or set itself up. */
+  agentsConnectInPanel: (id: string) => invoke<void>("agents_connect_in_panel", { id }),
+  /** "Add agent…": pick an agent's program on this Mac. Null if nothing was picked. */
+  agentsAddCustom: () => invoke<AgentCliStatus | null>("agents_add_custom"),
+  agentsRemoveCustom: (id: string) => invoke<void>("agents_remove_custom", { id }),
+  /** The agent used when nothing else says which; null lets TodoCity pick. */
+  agentsSetDefault: (id: string | null) => invoke<void>("agents_set_default", { id }),
+  /** Open the agent panel, starting `agent` (with a first message), or on Activity. */
+  agentPanelOpen: (agent: string | null, prompt?: string | null) => invoke<void>("agent_panel_open", { agent, prompt: prompt ?? null }),
+  /** The agent panel's Activity tab: background work by agents. */
+  agentConsole: () => invoke<ActivityEntry[]>("agent_console"),
+  agentConsoleClear: () => invoke<void>("agent_console_clear"),
   agentsDisconnect: (id: string) => invoke<AgentsStatus>("agents_disconnect", { id }),
   /** Send a test task through `TodoCity --mcp`; resolves with a message. */
   agentsTest: () => invoke<string>("agents_test"),
@@ -381,6 +395,20 @@ export function onRemindersChanged(handler: () => void): Promise<UnlistenFn> {
 
 
 /** An agent changed tasks, or its changes were undone. */
+/** A new line for the agent panel's Activity tab. */
+export function onAgentActivity(handler: (e: ActivityEntry) => void): Promise<UnlistenFn> {
+  return listen<ActivityEntry>("agent-console", (e) => handler(e.payload));
+}
+
+export function onAgentActivityCleared(handler: () => void): Promise<UnlistenFn> {
+  return listen("agent-console-cleared", () => handler());
+}
+
+/** Something asked for the agent panel (Connect in Settings → Agents, Open…). */
+export function onAgentPanelOpen(handler: (r: PanelRequest) => void): Promise<UnlistenFn> {
+  return listen<PanelRequest>("agent-panel-open", (e) => handler(e.payload));
+}
+
 export function onAgentChanges(handler: () => void): Promise<UnlistenFn> {
   return listen("agent-changes", () => handler());
 }

@@ -28,6 +28,7 @@
 pub mod agent_llm;
 pub mod agent_log;
 pub mod agent_runs;
+pub mod agent_setup;
 pub mod agent_tools;
 pub mod app_keys;
 pub mod calendar_sync;

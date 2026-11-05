@@ -88,6 +88,8 @@ export function SlackBody({ status, error }: { status: SlackStatus; error: strin
             {installed.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name}
+                {a.slack ? " · has Slack" : ""}
+                {a.default ? " · default" : ""}
               </option>
             ))}
           </select>

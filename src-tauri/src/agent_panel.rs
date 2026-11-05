@@ -23,6 +23,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use todocity_core::agent_runs::{self, AgentCli, AgentRun, RunStatus};
+use todocity_core::agent_setup::{self, CustomAgent};
 
 use crate::agents::apps;
 use crate::settings::Settings;
@@ -77,9 +78,17 @@ pub struct Sessions {
 /// An agent the panel can start, and whether it's on this Mac.
 #[derive(Debug, Clone, Serialize)]
 pub struct CliStatus {
-    pub id: &'static str,
-    pub name: &'static str,
+    pub id: String,
+    pub name: String,
     pub installed: bool,
+    /// Added by the person ("Add agent…").
+    pub custom: bool,
+    /// The program, for agents the person added.
+    pub path: Option<String>,
+    /// Its settings already have a Slack MCP server.
+    pub slack: bool,
+    /// The default agent (Settings → Agents).
+    pub default: bool,
 }
 
 /// A run, as the task shows it.
@@ -124,10 +133,22 @@ fn shell() -> String {
         .unwrap_or_else(|| "/bin/zsh".into())
 }
 
-fn agent_name(id: &str) -> String {
-    agent_runs::cli(id)
-        .map(|c| c.name.to_string())
+fn agent_name(app: &AppHandle, id: &str) -> String {
+    if let Some(c) = agent_runs::cli(id) {
+        return c.name.to_string();
+    }
+    custom_agent(app, id)
+        .map(|c| c.name)
         .unwrap_or_else(|| id.to_string())
+}
+
+/// An agent the person added, by id.
+pub(crate) fn custom_agent(app: &AppHandle, id: &str) -> Option<CustomAgent> {
+    app.state::<Settings>()
+        .get()
+        .custom_agents
+        .into_iter()
+        .find(|c| c.id == id)
 }
 
 /// Split `bytes` into the text that's complete and the start of a character
@@ -187,16 +208,65 @@ fn usual_places(home: &Path, binary: &str) -> Vec<PathBuf> {
     ]
 }
 
-/// Which agents are installed: the usual places, then the person's own
-/// shell (which knows nvm, asdf and the like).
+/// Folders version managers put command-line tools in (nvm, fnm, asdf,
+/// mise, Volta, pnpm, Yarn, Deno), each Node version's too.
+fn manager_dirs(home: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![
+        home.join(".asdf/shims"),
+        home.join(".local/share/mise/shims"),
+        home.join("Library/pnpm"),
+        home.join(".local/share/pnpm"),
+        home.join(".yarn/bin"),
+        home.join(".config/yarn/global/node_modules/.bin"),
+        home.join(".deno/bin"),
+        home.join("bin"),
+        PathBuf::from("/opt/local/bin"),
+    ];
+    let versions = [
+        (home.join(".nvm/versions/node"), "bin"),
+        (home.join(".local/share/mise/installs/node"), "bin"),
+        (home.join(".fnm/node-versions"), "installation/bin"),
+        (
+            home.join("Library/Application Support/fnm/node-versions"),
+            "installation/bin",
+        ),
+        (home.join(".asdf/installs/nodejs"), "bin"),
+    ];
+    for (root, bin) in versions {
+        if let Ok(entries) = std::fs::read_dir(&root) {
+            for e in entries.flatten().take(40) {
+                dirs.push(e.path().join(bin));
+            }
+        }
+    }
+    dirs
+}
+
+/// Whether `path` is a program that can run.
+fn runnable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    {
+        path.is_file()
+    }
+}
+
+/// Which agents are installed: the usual places, the folders version
+/// managers use, then the person's own shell (which knows the rest).
 pub(crate) fn find_installed() -> Vec<String> {
     let home = home();
+    let managers = manager_dirs(&home);
     let mut found: Vec<String> = agent_runs::CLIS
         .iter()
         .filter(|c| {
-            c.binaries()
-                .iter()
-                .any(|b| usual_places(&home, b).iter().any(|p| p.is_file()))
+            c.binaries().iter().any(|b| {
+                usual_places(&home, b).iter().any(|p| p.is_file())
+                    || managers.iter().any(|d| runnable(&d.join(b)))
+            })
         })
         .map(|c| c.id.to_string())
         .collect();
@@ -225,31 +295,331 @@ pub(crate) fn find_installed() -> Vec<String> {
     found
 }
 
-/// The agents the panel offers, and which are installed.
+/// The installed agents found so far, without looking again (empty until
+/// the first look, which starts with the app).
+pub(crate) fn installed_cached(app: &AppHandle) -> Vec<String> {
+    lock(&app.state::<Sessions>())
+        .installed
+        .clone()
+        .unwrap_or_default()
+}
+
+/// Look for installed agents again, and remember what was found.
+pub(crate) fn rescan(app: &AppHandle) -> Vec<String> {
+    let list = find_installed();
+    lock(&app.state::<Sessions>()).installed = Some(list.clone());
+    list
+}
+
+/// Whether agent `id`'s own settings have a Slack MCP server. (Claude
+/// Code can also get Slack from claude.ai's connectors, which don't show
+/// here; the Slack check finds those.)
+pub(crate) fn has_slack(id: &str) -> bool {
+    let home = home();
+    let json = |rel: &str| {
+        apps::read_json(&home.join(rel))
+            .map(|v| agent_setup::json_has_slack(&v))
+            .unwrap_or(false)
+    };
+    match id {
+        "claude" => json(".claude.json") || json(".claude/settings.json"),
+        "codex" => std::fs::read_to_string(home.join(".codex/config.toml"))
+            .map(|t| agent_setup::toml_has_slack(&t))
+            .unwrap_or(false),
+        "cursor" => json(".cursor/mcp.json"),
+        "gemini" => json(".gemini/settings.json"),
+        "antigravity" => json(".gemini/antigravity-cli/settings.json"),
+        _ => false,
+    }
+}
+
+/// Every agent the panel offers (the default first), and which are here.
+pub(crate) fn clis_now(app: &AppHandle, installed: &[String]) -> Vec<CliStatus> {
+    let settings = app.state::<Settings>().get();
+    let default = settings.default_agent.clone();
+    let mut out: Vec<CliStatus> = agent_runs::CLIS
+        .iter()
+        .map(|c| {
+            let here = installed.iter().any(|i| i == c.id);
+            CliStatus {
+                id: c.id.to_string(),
+                name: c.name.to_string(),
+                installed: here,
+                custom: false,
+                path: None,
+                slack: here && has_slack(c.id),
+                default: default.as_deref() == Some(c.id),
+            }
+        })
+        .collect();
+    out.extend(settings.custom_agents.iter().map(|c| CliStatus {
+        id: c.id.clone(),
+        name: c.name.clone(),
+        installed: runnable(Path::new(&c.path)),
+        custom: true,
+        path: Some(c.path.clone()),
+        slack: false,
+        default: default.as_deref() == Some(c.id.as_str()),
+    }));
+    let ids: Vec<String> = out.iter().map(|c| c.id.clone()).collect();
+    let order = agent_setup::ordered(&ids, default.as_deref());
+    out.sort_by_key(|c| order.iter().position(|o| o == &c.id).unwrap_or(usize::MAX));
+    out
+}
+
+/// The agents the panel offers, and which are installed. `refresh` looks
+/// on the Mac again (Check for agents).
 #[tauri::command]
-pub async fn agent_clis(
-    sessions: State<'_, Sessions>,
-    refresh: bool,
-) -> Result<Vec<CliStatus>, String> {
-    let cached = lock(&sessions).installed.clone();
+pub async fn agent_clis(app: AppHandle, refresh: bool) -> Result<Vec<CliStatus>, String> {
+    let cached = lock(&app.state::<Sessions>()).installed.clone();
     let installed = match cached {
         Some(list) if !refresh => list,
         _ => {
-            let list = tauri::async_runtime::spawn_blocking(find_installed)
+            let app2 = app.clone();
+            let list = tauri::async_runtime::spawn_blocking(move || rescan(&app2))
                 .await
                 .map_err(|e| e.to_string())?;
-            lock(&sessions).installed = Some(list.clone());
+            if refresh {
+                let _ = app.emit("agent-changes", ());
+            }
             list
         }
     };
-    Ok(agent_runs::CLIS
-        .iter()
-        .map(|c| CliStatus {
-            id: c.id,
-            name: c.name,
-            installed: installed.iter().any(|i| i == c.id),
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || clis_now(&app2, &installed))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// "Add agent…": pick an agent's program on the Mac, and add it.
+#[tauri::command]
+pub async fn agents_add_custom(app: AppHandle) -> Result<Option<CliStatus>, String> {
+    let picked = pick_program().await?;
+    let Some(path) = picked else {
+        return Ok(None);
+    };
+    let existing = app.state::<Settings>().get().custom_agents;
+    let agent = agent_setup::new_custom(&path, &existing)?;
+    if !runnable(Path::new(&agent.path)) {
+        return Err(format!(
+            "{} can't be started as a program. Pick the agent's command (often in ~/.local/bin or /opt/homebrew/bin).",
+            agent.path
+        ));
+    }
+    let added = agent.clone();
+    app.state::<Settings>()
+        .update(|s| s.custom_agents.push(added));
+    crate::activity::log(
+        &app,
+        "agents",
+        Some(&agent.id),
+        "ok",
+        format!("Added {} ({})", agent.name, agent.path),
+    );
+    let _ = app.emit("agent-changes", ());
+    let installed = installed_cached(&app);
+    Ok(clis_now(&app, &installed)
+        .into_iter()
+        .find(|c| c.id == agent.id))
+}
+
+/// Remove an agent the person added (and stop using it as the default).
+#[tauri::command]
+pub fn agents_remove_custom(app: AppHandle, id: String) {
+    app.state::<Settings>().update(|s| {
+        s.custom_agents.retain(|c| c.id != id);
+        if s.default_agent.as_deref() == Some(id.as_str()) {
+            s.default_agent = None;
+        }
+    });
+    let _ = app.emit("agent-changes", ());
+}
+
+/// The agent to use when nothing else says which. `None` lets TodoCity pick.
+#[tauri::command]
+pub fn agents_set_default(app: AppHandle, id: Option<String>) -> Result<(), String> {
+    let id = id.filter(|i| !i.is_empty());
+    if let Some(i) = id.as_deref() {
+        let known = agent_runs::cli(i).is_some() || custom_agent(&app, i).is_some();
+        if !known {
+            return Err("Pick one of your agents.".into());
+        }
+    }
+    app.state::<Settings>()
+        .update(|s| s.default_agent = id.clone());
+    if let Some(i) = id.as_deref() {
+        let name = agent_name(&app, i);
+        crate::activity::log(
+            &app,
+            "agents",
+            Some(i),
+            "info",
+            format!("{name} is your default agent"),
+        );
+    }
+    let _ = app.emit("agent-changes", ());
+    Ok(())
+}
+
+/// What the agent panel should show: an agent started (with a first
+/// message), or the Activity tab. The main window listens for it.
+#[derive(Debug, Clone, Serialize)]
+pub struct PanelRequest {
+    pub agent: Option<String>,
+    pub prompt: Option<String>,
+    /// Show the Activity tab (nothing to start).
+    pub activity: bool,
+}
+
+/// Open the agent panel, starting `agent` (or showing Activity).
+#[tauri::command]
+pub fn agent_panel_open(app: AppHandle, agent: Option<String>, prompt: Option<String>) {
+    let activity = agent.is_none();
+    let _ = app.emit(
+        "agent-panel-open",
+        PanelRequest {
+            agent,
+            prompt,
+            activity,
+        },
+    );
+}
+
+/// Connect an agent from Settings → Agents, in the agent panel:
+/// - an agent TodoCity knows gets TodoCity's MCP server in its settings,
+///   then starts in the panel to check it can see TodoCity's tools;
+/// - an app with nothing to start (Claude Desktop, VS Code…) is connected
+///   and the panel shows what was done and what's next;
+/// - an agent the person added starts in the panel and adds TodoCity to
+///   its own settings, with the person there to help.
+#[tauri::command]
+pub async fn agents_connect_in_panel(app: AppHandle, id: String) -> Result<(), String> {
+    let command = crate::agents::exe_path();
+    crate::agents::refuse_temporary(&command)?;
+    app.state::<Settings>().update(|s| s.agents_enabled = true);
+    if agent_setup::is_custom(&id) {
+        let agent = custom_agent(&app, &id).ok_or("Add that agent again in Settings → Agents.")?;
+        crate::activity::log(
+            &app,
+            "agents",
+            Some(&id),
+            "working",
+            format!(
+                "Connecting {}: it's adding TodoCity to its own settings in the panel",
+                agent.name
+            ),
+        );
+        agent_panel_open(
+            app.clone(),
+            Some(id),
+            Some(agent_setup::connect_prompt(&command)),
+        );
+        let _ = app.emit("agent-changes", ());
+        return Ok(());
+    }
+    // A known agent, by its command-line id (claude) or its app id (claude_code).
+    let by_cli = agent_runs::cli(&id);
+    let connector = by_cli
+        .and_then(|c| c.connector)
+        .map(str::to_string)
+        .unwrap_or_else(|| id.clone());
+    let cli = by_cli.or_else(|| {
+        agent_runs::CLIS
+            .iter()
+            .find(|c| c.connector == Some(connector.as_str()))
+    });
+    let status = apps::statuses(&command)
+        .into_iter()
+        .find(|a| a.id == connector);
+    let name = status
+        .as_ref()
+        .map(|a| a.name.to_string())
+        .or_else(|| cli.map(|c| c.name.to_string()))
+        .unwrap_or_else(|| id.clone());
+    crate::activity::log(
+        &app,
+        "agents",
+        Some(&id),
+        "working",
+        format!("Connecting {name}…"),
+    );
+    if let Some(st) = status {
+        let proactive = app.state::<Settings>().get().agents_proactive;
+        let conn = connector.clone();
+        let cmd = command.clone();
+        let result =
+            tauri::async_runtime::spawn_blocking(move || apps::connect(&conn, &cmd, proactive))
+                .await
+                .map_err(|e| e.to_string())?;
+        if let Err(e) = result {
+            crate::activity::log(
+                &app,
+                "agents",
+                Some(&id),
+                "error",
+                format!("Couldn't connect {name}: {e}"),
+            );
+            agent_panel_open(app.clone(), None, None);
+            return Err(format!("Couldn't connect {name}: {e}"));
+        }
+        crate::activity::log(
+            &app,
+            "agents",
+            Some(&id),
+            "ok",
+            format!(
+                "Connected {name}: TodoCity is in its MCP settings. {}",
+                st.restart_hint
+            ),
+        );
+    }
+    let _ = app.emit("agent-changes", ());
+    let installed = installed_cached(&app);
+    match cli.filter(|c| installed.iter().any(|i| i == c.id)) {
+        Some(c) => {
+            crate::activity::log(
+                &app,
+                "agents",
+                Some(c.id),
+                "info",
+                format!("Starting {} to check it can see TodoCity", c.name),
+            );
+            agent_panel_open(
+                app.clone(),
+                Some(c.id.to_string()),
+                Some(agent_setup::check_prompt()),
+            );
+        }
+        None => agent_panel_open(app.clone(), None, None),
+    }
+    Ok(())
+}
+
+/// Ask the person to pick a program (macOS's own file picker).
+async fn pick_program() -> Result<Option<String>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let out = tauri::async_runtime::spawn_blocking(|| {
+            apps::run(
+                std::process::Command::new("/usr/bin/osascript").args([
+                    "-e",
+                    "POSIX path of (choose file with prompt \"Pick your agent's program (for example in ~/.local/bin or /opt/homebrew/bin)\" default location (path to home folder) with showing package contents)",
+                ]),
+                Duration::from_secs(600),
+            )
         })
-        .collect())
+        .await
+        .map_err(|e| e.to_string())?;
+        // Cancelled: nothing picked, no error.
+        Ok(out
+            .ok()
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty()))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(None)
+    }
 }
 
 // ── TodoCity's MCP server in every agent ──────────────────────────────────
@@ -309,6 +679,21 @@ pub fn agent_argv(c: &AgentCli, args: &[String]) -> (String, Vec<String>) {
     ];
     v.extend(args.iter().cloned());
     (shell(), v)
+}
+
+/// The person's login shell running an agent they added.
+fn custom_argv(c: &CustomAgent) -> (String, Vec<String>) {
+    (
+        shell(),
+        vec![
+            "-l".into(),
+            "-i".into(),
+            "-c".into(),
+            agent_setup::custom_script(&c.name),
+            "todocity-agent".into(),
+            c.path.clone(),
+        ],
+    )
 }
 
 fn command_line(cli: Option<&AgentCli>, args: &[String]) -> (String, Vec<String>) {
@@ -438,11 +823,23 @@ pub async fn term_start(
     cols: u16,
     rows: u16,
 ) -> Result<SessionInfo, String> {
-    let cli = match agent.as_deref() {
-        Some(id) => Some(agent_runs::cli(id).ok_or("Pick an agent from the list.")?),
-        None => None,
+    // An agent the person added, or one TodoCity knows.
+    let custom = match agent.as_deref() {
+        Some(id) if agent_setup::is_custom(id) => {
+            Some(custom_agent(&app, id).ok_or("Add that agent again in Settings → Agents.")?)
+        }
+        _ => None,
     };
-    if task_id.is_some() && cli.is_none() {
+    let cli = match agent.as_deref() {
+        Some(id) if custom.is_none() => {
+            Some(agent_runs::cli(id).ok_or("Pick an agent from the list.")?)
+        }
+        _ => None,
+    };
+    let agent_id: Option<String> = cli
+        .map(|c| c.id.to_string())
+        .or_else(|| custom.as_ref().map(|c| c.id.clone()));
+    if task_id.is_some() && agent_id.is_none() {
         return Err("Pick an agent to send the task to.".into());
     }
     let folder = folder
@@ -469,13 +866,13 @@ pub async fn term_start(
 
     // "Send to agent": the run, and the task as the first message.
     let folder_text = folder.display().to_string();
-    let (run, title, prompt) = match (task_id, cli) {
-        (Some(task_id), Some(c)) => {
+    let (run, title, prompt) = match (task_id, agent_id.as_deref()) {
+        (Some(task_id), Some(who)) => {
             let extra = extra.unwrap_or_default();
             let (run, task) = with_store(&app, |s| {
                 let task = s.get(task_id).map_err(|e| e.to_string())?;
                 let run = s
-                    .start_run(task_id, c.id, Some(&folder_text))
+                    .start_run(task_id, who, Some(&folder_text))
                     .map_err(|e| e.to_string())?;
                 Ok((run, task))
             })?;
@@ -489,7 +886,7 @@ pub async fn term_start(
                 .unwrap_or_else(|| folder_text.clone());
             let prompt = prompt
                 .map(|p| p.trim().chars().take(4000).collect::<String>())
-                .filter(|p| !p.is_empty() && cli.is_some());
+                .filter(|p| !p.is_empty() && agent_id.is_some());
             (None, name, prompt)
         }
     };
@@ -502,7 +899,10 @@ pub async fn term_start(
         let pre = agent_runs::allow_args(c.id, &allow.unwrap_or_default());
         args.splice(0..0, pre);
     }
-    let (program, argv) = command_line(cli, &args);
+    let (program, argv) = match &custom {
+        Some(c) => custom_argv(c),
+        None => command_line(cli, &args),
+    };
     let pty =
         crate::pty::spawn(&program, &argv, &folder, &terminal_env(), cols, rows).map_err(|e| {
             if let Some(r) = &run {
@@ -522,9 +922,10 @@ pub async fn term_start(
         let id = g.next;
         let info = SessionInfo {
             id,
-            agent: cli.map(|c| c.id.to_string()),
+            agent: agent_id.clone(),
             name: cli
                 .map(|c| c.name.to_string())
+                .or_else(|| custom.as_ref().map(|c| c.name.clone()))
                 .unwrap_or_else(|| "Terminal".into()),
             title,
             folder: folder_text,
@@ -563,8 +964,10 @@ pub async fn term_start(
     }
     // Agents with no flag for a first message: paste it in once they've
     // drawn their screen and gone quiet.
-    if let (Some(c), Some(text)) = (cli, prompt.clone()) {
-        if c.paste_prompt {
+    // Agents the person added get theirs pasted in too.
+    let paste = cli.is_some_and(|c| c.paste_prompt) || custom.is_some();
+    if let Some(text) = prompt.clone() {
+        if paste {
             let inner = inner.clone();
             let _ = std::thread::Builder::new()
                 .name(format!("term-{id}-prompt"))
@@ -707,6 +1110,17 @@ pub fn term_close(app: AppHandle, sessions: State<'_, Sessions>, id: u32) {
 /// Every few seconds: a working agent that has gone quiet is waiting for
 /// the person; one that starts talking again on its own is back at work.
 pub fn start(app: &AppHandle) {
+    // Look for agents once at launch, so Settings → Agents and the panel
+    // know them without waiting.
+    {
+        let app = app.clone();
+        let _ = std::thread::Builder::new()
+            .name("agent-scan".into())
+            .spawn(move || {
+                rescan(&app);
+                let _ = app.emit("agent-changes", ());
+            });
+    }
     let app = app.clone();
     let _ = std::thread::Builder::new()
         .name("agent-quiet".into())
@@ -798,7 +1212,7 @@ pub fn agent_run_list(
                     .map_err(|e| e.to_string())?;
             }
             out.push(RunInfo {
-                agent_name: agent_name(&run.agent),
+                agent_name: agent_name(&app, &run.agent),
                 session: live.get(&run.id).copied(),
                 run,
             });
@@ -872,7 +1286,7 @@ pub fn on_report(app: &AppHandle, args: &serde_json::Value) -> Result<serde_json
     if let Some(output) = output {
         keep_transcript(app, run.id, &output);
     }
-    let name = agent_name(&run.agent);
+    let name = agent_name(app, &run.agent);
     match run.status {
         RunStatus::Ready => crate::notifications::send_plain(
             app,

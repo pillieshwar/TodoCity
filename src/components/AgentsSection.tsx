@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, onAgentChanges } from "../lib/api";
-import type { AgentApp, AgentChange, AgentsStatus } from "../lib/types";
+import type { AgentApp, AgentChange, AgentCliStatus, AgentsStatus } from "../lib/types";
+import { buildCards, kindLabel, notFound, startable, type AgentCard } from "../lib/agentCards";
 import { Toggle } from "./GeneralSettings";
 import { safeLocale } from "../lib/locale";
 import { InfoTip } from "./InfoTip";
@@ -84,11 +85,7 @@ export function AgentsPage() {
         </div>
       )}
 
-      <h3 className="set-subhead" id="agents-list">
-        Your agents
-        <InfoTip text="Connect adds TodoCity's MCP server to that agent's settings. Agents started from TodoCity's agent panel are connected for you." />
-      </h3>
-      <AgentAppList status={status} onStatus={onStatus} onError={setError} />
+      <AgentCards status={status} onError={setError} />
 
       {status.full_access && <AgentDeletes onError={setError} />}
       <ManualSetup command={status.command} onError={setError}>
@@ -101,6 +98,211 @@ export function AgentsPage() {
       </ManualSetup>
       {error && <p className="rem-error">{error}</p>}
     </section>
+  );
+}
+
+/**
+ * Settings → Agents → Your agents: every agent found on this Mac as a
+ * card. Check for agents looks again (version managers and your shell
+ * too), Add agent… picks one yourself, and Connect opens the agent panel
+ * and connects it there, where you can see and help.
+ */
+export function AgentCards({ status, onError }: { status: AgentsStatus; onError: (m: string | null) => void }) {
+  const [clis, setClis] = useState<AgentCliStatus[] | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const load = useCallback(() => void api.agentClis().then(setClis).catch(() => undefined), []);
+  useEffect(() => {
+    load();
+    const sub = onAgentChanges(load);
+    return () => void sub.then((u) => u());
+  }, [load]);
+  const list = clis ?? [];
+  const cards = buildCards(status.apps, list, status.default_agent ?? null);
+  const choices = startable(cards);
+  const missing = notFound(status.apps, list);
+
+  async function act(key: string, f: () => Promise<unknown>, after?: string) {
+    onError(null);
+    setNote(null);
+    setBusy(key);
+    try {
+      await f();
+      if (after) setNote(after);
+    } catch (e) {
+      onError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function scan() {
+    onError(null);
+    setNote(null);
+    setScanning(true);
+    try {
+      const found = await api.agentClis(true);
+      setClis(found);
+      const n = buildCards(status.apps, found, status.default_agent ?? null).length;
+      setNote(n === 1 ? "Found 1 agent on this Mac." : `Found ${n} agents on this Mac.`);
+    } catch (e) {
+      onError(String(e));
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function add() {
+    onError(null);
+    setNote(null);
+    setBusy("add");
+    try {
+      const added = await api.agentsAddCustom();
+      if (added) {
+        setNote(`Added ${added.name}. Choose Connect to let it use TodoCity.`);
+        load();
+      }
+    } catch (e) {
+      onError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="agent-cards-wrap">
+      <div className="agent-cards-head">
+        <h3 className="set-subhead" id="agents-list">
+          Your agents
+          <InfoTip text="Connect opens the agent panel and connects the agent there: TodoCity adds its MCP server to the agent's settings, then the agent checks it can see TodoCity. You can type to it if it needs a hand." />
+        </h3>
+        <div className="agent-cards-actions">
+          <button type="button" className="ghost small" disabled={scanning} onClick={() => void scan()}>
+            {scanning ? "Looking…" : "Check for agents"}
+          </button>
+          <button type="button" className="ghost small" disabled={busy === "add"} onClick={() => void add()}>
+            Add agent…
+          </button>
+        </div>
+      </div>
+
+      {choices.length > 0 && (
+        <label className="agent-default">
+          <span>
+            Default agent
+            <InfoTip text="Used for Slack, new sessions in the agent panel and Send to agent, unless you pick another there. For Slack, an agent that already has Slack comes first." />
+          </span>
+          <select
+            value={status.default_agent ?? ""}
+            aria-label="Default agent"
+            onChange={(e) => void act("default", () => api.agentsSetDefault(e.target.value || null))}
+          >
+            <option value="">Let TodoCity choose</option>
+            {choices.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.slack ? " · has Slack" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {clis === null ? (
+        <p className="setting-line muted">Looking for agents on this Mac…</p>
+      ) : cards.length === 0 ? (
+        <div className="agent-cards-empty">
+          <p>Install Claude Code, Codex, Cursor or another agent, then choose Check for agents. If yours is somewhere else, choose Add agent… and pick its program.</p>
+        </div>
+      ) : (
+        <ul className="agent-cards">
+          {cards.map((c) => (
+            <AgentCardRow
+              key={c.id}
+              card={c}
+              busy={busy}
+              onConnect={() => void act(c.id, () => api.agentsConnectInPanel(c.app?.id ?? c.id))}
+              onOpen={() => void act(`open:${c.id}`, () => api.agentPanelOpen(c.id))}
+              onDisconnect={() => c.app && void act(c.id, () => api.agentsDisconnect(c.app!.id))}
+              onDefault={() => void act("default", () => api.agentsSetDefault(c.id))}
+              onRemove={() => void act(c.id, () => api.agentsRemoveCustom(c.id))}
+            />
+          ))}
+        </ul>
+      )}
+      {note && <p className="agent-app-hint agent-note">{note}</p>}
+      {missing.length > 0 && <p className="agent-app-hint">Also works with {missing.join(", ")}.</p>}
+    </div>
+  );
+}
+
+function AgentCardRow({
+  card,
+  busy,
+  onConnect,
+  onOpen,
+  onDisconnect,
+  onDefault,
+  onRemove,
+}: {
+  card: AgentCard;
+  busy: string | null;
+  onConnect: () => void;
+  onOpen: () => void;
+  onDisconnect: () => void;
+  onDefault: () => void;
+  onRemove: () => void;
+}) {
+  const working = busy === card.id;
+  const canStart = !!card.cli?.installed;
+  const moved = card.kind === "custom" && !card.cli?.installed;
+  return (
+    <li className={card.isDefault ? "agent-card is-default" : "agent-card"} data-agent={card.id}>
+      <AgentTile agent={card.id} size={32} />
+      <div className="agent-card-text">
+        <span className="agent-card-name">
+          <b>{card.name}</b>
+          {card.isDefault && <span className="agent-badge">Default</span>}
+          {card.connected && <span className="agent-ok">✓ Connected</span>}
+          {card.stale && <span className="agent-warn">Update available</span>}
+        </span>
+        <small>
+          {moved ? "Add it again: its program moved" : kindLabel(card.kind)}
+          {card.slack && " · Has Slack"}
+          {card.kind === "custom" && card.cli?.path && !moved && <span className="agent-card-path"> · {card.cli.path}</span>}
+        </small>
+        <span className="agent-card-links">
+          {canStart && !card.isDefault && (
+            <button type="button" className="link-btn quiet" disabled={busy !== null} onClick={onDefault}>
+              Make default
+            </button>
+          )}
+          {card.connected && card.app && (
+            <button type="button" className="link-btn quiet" disabled={busy !== null} onClick={onDisconnect}>
+              {working ? "Removing…" : "Disconnect"}
+            </button>
+          )}
+          {card.kind === "custom" && (
+            <button type="button" className="link-btn quiet" disabled={busy !== null} onClick={onRemove}>
+              Remove
+            </button>
+          )}
+        </span>
+      </div>
+      <div className="agent-card-actions">
+        {canStart && (
+          <button type="button" className="ghost small" disabled={busy !== null} onClick={onOpen} title={`Open ${card.name} in the agent panel`}>
+            Open
+          </button>
+        )}
+        {!moved && (!card.connected || card.stale || card.kind === "custom") && (
+          <button type="button" className="primary small agent-connect" disabled={busy !== null} onClick={onConnect}>
+            {working ? "Connecting…" : card.stale ? "Update" : card.kind === "custom" ? "Set up" : "Connect"}
+          </button>
+        )}
+      </div>
+    </li>
   );
 }
 

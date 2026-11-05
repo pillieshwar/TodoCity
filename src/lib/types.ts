@@ -333,6 +333,8 @@ export interface AgentsStatus {
   temporary_location: boolean;
   apps: AgentApp[];
   pending: number;
+  /** The agent used when nothing else says which. */
+  default_agent?: string | null;
 }
 
 /** Mirrors `agents::apps::AppStatus`. */
@@ -545,6 +547,9 @@ export interface SlackAgent {
   id: string;
   name: string;
   installed: boolean;
+  /** Its own settings already have a Slack MCP server. */
+  slack?: boolean;
+  default?: boolean;
 }
 
 /** What starts in the agent panel to check Slack (the `slack-setup` event). */
@@ -761,6 +766,32 @@ export interface AgentCliStatus {
   id: string;
   name: string;
   installed: boolean;
+  /** Added by the person ("Add agent…"). */
+  custom?: boolean;
+  /** The program, for agents the person added. */
+  path?: string | null;
+  /** Its own settings already have a Slack MCP server. */
+  slack?: boolean;
+  /** The default agent (Settings → Agents). */
+  default?: boolean;
+}
+
+/** One line in the agent panel's Activity tab (mirrors `activity::Entry`). */
+export interface ActivityEntry {
+  id: number;
+  /** Local `YYYY-MM-DDTHH:MM:SS`. */
+  at: string;
+  source: "slack" | "agents" | string;
+  agent: string | null;
+  kind: "info" | "working" | "ok" | "added" | "error" | string;
+  text: string;
+}
+
+/** What the agent panel should show (the `agent-panel-open` event). */
+export interface PanelRequest {
+  agent: string | null;
+  prompt: string | null;
+  activity: boolean;
 }
 
 /** A terminal in the agent panel. */

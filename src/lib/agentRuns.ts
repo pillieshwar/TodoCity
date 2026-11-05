@@ -64,8 +64,15 @@ export function monogram(agent: string | null): { letters: string; color: string
       return { letters: "CA", color: "#4B4F58" };
     case "antigravity":
       return { letters: "AG", color: "#1A73E8" };
-    default:
+    default: {
+      // Agents the person added: the first letter or two of their id.
+      if (agent?.startsWith("custom:")) {
+        const words = agent.slice(7).split("-").filter(Boolean);
+        const letters = (words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? "A").slice(0, 2)).toUpperCase();
+        return { letters, color: "#5B4FB0" };
+      }
       return { letters: "", color: "#3A3936" };
+    }
   }
 }
 
@@ -132,7 +139,9 @@ export function saveLastAgent(id: string) {
 }
 
 /** The agent to offer first: the last one used if it's installed, else the first installed. */
-export function defaultAgent(installed: string[], last: string | null): string | null {
+/** The agent to preselect: the default agent if it's here, else the last one used, else the first. */
+export function defaultAgent(installed: string[], last: string | null, preferred: string | null = null): string | null {
+  if (preferred && installed.includes(preferred)) return preferred;
   if (last && installed.includes(last)) return last;
   return installed[0] ?? null;
 }

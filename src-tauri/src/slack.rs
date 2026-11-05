@@ -96,6 +96,16 @@ fn local_text(ms: i64) -> Option<String> {
     }
 }
 
+/// "10:05" for a Unix ms, in local time.
+fn clock(ms: i64) -> String {
+    match Local.timestamp_millis_opt(ms) {
+        chrono::LocalResult::Single(t) | chrono::LocalResult::Ambiguous(t, _) => {
+            t.format("%-I:%M %p").to_string()
+        }
+        chrono::LocalResult::None => String::new(),
+    }
+}
+
 fn changed(app: &AppHandle) {
     let _ = app.emit("slack-changed", ());
 }
@@ -113,6 +123,10 @@ pub struct AgentChoice {
     pub id: &'static str,
     pub name: &'static str,
     pub installed: bool,
+    /// Its own settings already have a Slack MCP server.
+    pub slack: bool,
+    /// The default agent (Settings → Agents).
+    pub default: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -190,19 +204,39 @@ pub fn slack_status(service: State<'_, SlackService>) -> SlackStatus {
 
 /// The agents that can read Slack for TodoCity, and which are installed.
 #[tauri::command]
-pub async fn slack_agents() -> Result<Vec<AgentChoice>, String> {
-    let installed = tauri::async_runtime::spawn_blocking(crate::agent_panel::find_installed)
+pub async fn slack_agents(app: AppHandle) -> Result<Vec<AgentChoice>, String> {
+    let default = app.state::<crate::settings::Settings>().get().default_agent;
+    let installed = installed_now(&app).await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        agent_runs::CLIS
+            .iter()
+            .filter(|c| rules::can_scan(c.id))
+            .map(|c| {
+                let here = installed.iter().any(|i| i == c.id);
+                AgentChoice {
+                    id: c.id,
+                    name: c.name,
+                    installed: here,
+                    slack: here && crate::agent_panel::has_slack(c.id),
+                    default: default.as_deref() == Some(c.id),
+                }
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// The installed agents: what the app found already, or a look now.
+async fn installed_now(app: &AppHandle) -> Result<Vec<String>, String> {
+    let cached = crate::agent_panel::installed_cached(app);
+    if !cached.is_empty() {
+        return Ok(cached);
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || crate::agent_panel::rescan(&app))
         .await
-        .map_err(|e| e.to_string())?;
-    Ok(agent_runs::CLIS
-        .iter()
-        .filter(|c| rules::can_scan(c.id))
-        .map(|c| AgentChoice {
-            id: c.id,
-            name: c.name,
-            installed: installed.iter().any(|i| i == c.id),
-        })
-        .collect())
+        .map_err(|e| e.to_string())
 }
 
 // ── Turning it on ─────────────────────────────────────────────────────────
@@ -215,30 +249,6 @@ pub struct SetupPlan {
     pub prompt: String,
     /// Tools the session may use without asking (Claude Code).
     pub allow: Vec<String>,
-}
-
-/// The agent to use: the one asked for, else the one used before, else
-/// Watch's, else the first installed one that can read Slack for TodoCity.
-fn pick_agent(
-    asked: Option<&str>,
-    before: Option<&str>,
-    watch: &str,
-    installed: &[String],
-) -> Option<String> {
-    let usable = |id: &str| rules::can_scan(id) && agent_runs::cli(id).is_some();
-    if let Some(a) = asked.filter(|a| usable(a)) {
-        return Some(a.to_string());
-    }
-    let is_installed = |id: &str| installed.iter().any(|i| i == id);
-    for c in [before, Some(watch)].into_iter().flatten() {
-        if usable(c) && is_installed(c) {
-            return Some(c.to_string());
-        }
-    }
-    rules::SCAN_AGENTS
-        .iter()
-        .find(|id| is_installed(id))
-        .map(|id| id.to_string())
 }
 
 fn new_token() -> String {
@@ -254,13 +264,40 @@ fn new_token() -> String {
 /// through `slack_check` (see [`on_check`]).
 #[tauri::command]
 pub async fn slack_connect(app: AppHandle, agent: Option<String>) -> Result<SetupPlan, String> {
-    let installed = tauri::async_runtime::spawn_blocking(crate::agent_panel::find_installed)
-        .await
-        .map_err(|e| e.to_string())?;
+    let installed = installed_now(&app).await?;
     let service = app.state::<SlackService>();
     let before = service.get().agent;
-    let watch = app.state::<crate::settings::Settings>().get().watch.reader;
-    let Some(agent) = pick_agent(agent.as_deref(), before.as_deref(), &watch, &installed) else {
+    let settings = app.state::<crate::settings::Settings>().get();
+    // Agents that can read Slack for TodoCity, and those that have Slack.
+    let can: Vec<String> = rules::SCAN_AGENTS
+        .iter()
+        .filter(|id| installed.iter().any(|i| i == *id))
+        .map(|id| id.to_string())
+        .collect();
+    let can2 = can.clone();
+    let with_slack: Vec<String> = tauri::async_runtime::spawn_blocking(move || {
+        can2.into_iter()
+            .filter(|id| crate::agent_panel::has_slack(id))
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let picked = todocity_core::agent_setup::slack_agent(
+        agent.as_deref(),
+        settings.default_agent.as_deref(),
+        before.as_deref(),
+        Some(settings.watch.reader.as_str()),
+        &can,
+        &with_slack,
+    );
+    let Some(agent) = picked else {
+        crate::activity::log(
+            &app,
+            "slack",
+            None,
+            "error",
+            "Install Claude Code, Codex or Cursor Agent and connect Slack to it, then turn Slack on again",
+        );
         return Err("Install Claude Code, Codex or Cursor Agent and connect Slack to it, then turn Slack on here.".into());
     };
     let token = new_token();
@@ -272,6 +309,21 @@ pub async fn slack_connect(app: AppHandle, agent: Option<String>) -> Result<Setu
         agent,
     };
     log::info!("slack: checking Slack with {}", plan.agent_name);
+    let why = if with_slack.iter().any(|a| a == &plan.agent) {
+        "it has Slack"
+    } else {
+        "checking whether it has Slack"
+    };
+    crate::activity::log(
+        &app,
+        "slack",
+        Some(&plan.agent),
+        "working",
+        format!(
+            "Turning on Slack with {} ({why}): it's checking in the panel",
+            plan.agent_name
+        ),
+    );
     let _ = app.emit("slack-setup", plan.clone());
     changed(&app);
     Ok(plan)
@@ -282,6 +334,7 @@ pub async fn slack_connect(app: AppHandle, agent: Option<String>) -> Result<Setu
 pub fn slack_disconnect(app: AppHandle) {
     app.state::<SlackService>().update(|s| s.turn_off());
     log::info!("slack: turned off");
+    crate::activity::log(&app, "slack", None, "info", "Slack is off");
     changed(&app);
 }
 
@@ -317,6 +370,16 @@ pub fn on_check(app: &AppHandle, args: &Value) -> Result<Value, String> {
                 "slack: {} can't read Slack yet ({reason})",
                 agent_name(&agent)
             );
+            crate::activity::log(
+                app,
+                "slack",
+                Some(&agent),
+                "error",
+                format!(
+                    "Connect Slack to {} to finish (Settings → Connectors → Slack shows how)",
+                    agent_name(&agent)
+                ),
+            );
             service.update(|s| s.phase = Phase::NeedsSlack { reason, detail });
             changed(app);
             Ok(json!({
@@ -346,6 +409,16 @@ pub fn on_check(app: &AppHandle, args: &Value) -> Result<Value, String> {
                 "slack: ready with {} ({} sample task)",
                 agent_name(&agent),
                 added.len()
+            );
+            crate::activity::log(
+                app,
+                "slack",
+                Some(&agent),
+                "ok",
+                format!(
+                    "Slack is connected through {}. TodoCity looks every 5 minutes",
+                    agent_name(&agent)
+                ),
             );
             crate::notifications::send_plain(
                 app,
@@ -468,6 +541,17 @@ fn scan_once(app: &AppHandle) -> bool {
     service.update(|s| s.last_attempt_ms = now);
     changed(app);
     let agent = state.agent.clone().unwrap_or_default();
+    let span = format!("{}–{}", clock(since), clock(until));
+    crate::activity::log(
+        app,
+        "slack",
+        Some(&agent),
+        "working",
+        format!(
+            "{} is looking at Slack messages from {span}",
+            agent_name(&agent)
+        ),
+    );
     let result = ask(&agent, &state.tools, since, until);
     // Turned off (or set up again) meanwhile: drop the answer.
     let still = service.get();
@@ -483,6 +567,24 @@ fn scan_once(app: &AppHandle) -> bool {
                 local_text(scan.covered_until_ms).unwrap_or_default(),
                 added.len()
             );
+            for title in &added {
+                crate::activity::log(
+                    app,
+                    "slack",
+                    Some(&agent),
+                    "added",
+                    format!("Added to your Inbox: {title}"),
+                );
+            }
+            if added.is_empty() {
+                crate::activity::log(
+                    app,
+                    "slack",
+                    Some(&agent),
+                    "ok",
+                    format!("Nothing new in Slack from {span}"),
+                );
+            }
             let body = match added.as_slice() {
                 [] => None,
                 [one] => Some(one.clone()),
@@ -494,6 +596,13 @@ fn scan_once(app: &AppHandle) -> bool {
         }
         Err(e) if current => {
             log::warn!("slack: scan failed: {e}");
+            crate::activity::log(
+                app,
+                "slack",
+                Some(&agent),
+                "error",
+                format!("{e} TodoCity tries again on its own."),
+            );
             service.update(|s| s.scan_failed(&e, now_ms()));
         }
         Err(_) => {}
@@ -535,29 +644,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn picks_the_agent_asked_for_then_the_one_used_before() {
-        let installed = vec!["codex".to_string(), "claude".to_string()];
-        assert_eq!(
-            pick_agent(Some("cursor"), Some("codex"), "local", &installed).as_deref(),
-            Some("cursor")
-        );
-        assert_eq!(
-            pick_agent(None, Some("codex"), "claude", &installed).as_deref(),
-            Some("codex")
-        );
-        assert_eq!(
-            pick_agent(None, None, "codex", &installed).as_deref(),
-            Some("codex")
-        );
-        // Watch on this Mac's open model: the first installed that can read Slack.
-        assert_eq!(
-            pick_agent(None, None, "local", &installed).as_deref(),
-            Some("claude")
-        );
-        // Agents that can't scan headless aren't picked.
-        assert_eq!(
-            pick_agent(Some("gemini"), None, "gemini", &[]).as_deref(),
-            None
-        );
+    fn agents_that_read_slack_are_known_agents() {
+        for id in rules::SCAN_AGENTS {
+            assert!(agent_runs::cli(id).is_some(), "{id}");
+        }
     }
 }

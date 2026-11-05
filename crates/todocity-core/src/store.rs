@@ -2414,11 +2414,18 @@ mod tests {
             .iter()
             .any(|p| p.name == "New" && p.plan_end.as_deref() == Some("2027-03-31")));
         assert!(s.set_project_plan("P", None).unwrap());
-        assert_eq!(s.projects().unwrap()[0].plan_start, None);
+        let p_of = |s: &Store| {
+            s.projects()
+                .unwrap()
+                .into_iter()
+                .find(|p| p.name == "P")
+                .unwrap()
+        };
+        assert_eq!(p_of(&s).plan_start, None);
         s.set_project_color("P", Some("#ff8800")).unwrap();
-        assert_eq!(s.projects().unwrap()[0].color.as_deref(), Some("#ff8800"));
+        assert_eq!(p_of(&s).color.as_deref(), Some("#ff8800"));
         s.set_project_color("P", Some("red; drop")).unwrap();
-        assert_eq!(s.projects().unwrap()[0].color, None);
+        assert_eq!(p_of(&s).color, None);
     }
 
     #[test]

@@ -2146,7 +2146,7 @@ await shot("full-timeline-open", FULL, timelineOf(), async (p) => {
   await bar(p, "Q4 launch").click();
   await p.waitForTimeout(300);
   if (!(await p.locator(".full-head").filter({ hasText: "Q4 launch" }).count())) throw new Error("clicking a bar didn't open its project");
-  if (await p.locator(".tl").count()) throw new Error("still on the Timeline");
+  if (await p.locator(".timeline").count()) throw new Error("still on the Timeline");
 });
 await shot("full-timeline-color", FULL, timelineOf(), async (p) => {
   await side(/^Timeline/)(p);

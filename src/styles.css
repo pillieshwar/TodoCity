@@ -3726,10 +3726,10 @@ h1, h2, h3, .empty-big, .story-card h2 { text-wrap: balance; }
 /* Blocks are a soft wash of their color with a solid stripe on the left, and
    text in a deep (light theme) or pale (dark theme) tone of the same hue —
    readable on every color, never a heavy slab. */
-.week-grid, .tl, .pastel { --tint: 22%; --tint-hover: 32%; --lift: 82%; --ink-base: #1f1d2b; --ink-amt: 58%; }
-:root[data-theme="dark"] :is(.week-grid, .tl, .pastel) { --tint: 26%; --tint-hover: 36%; --lift: 52%; --ink-base: #fff; --ink-amt: 34%; }
+.week-grid, .timeline, .pastel { --tint: 22%; --tint-hover: 32%; --lift: 82%; --ink-base: #1f1d2b; --ink-amt: 58%; }
+:root[data-theme="dark"] :is(.week-grid, .timeline, .pastel) { --tint: 26%; --tint-hover: 36%; --lift: 52%; --ink-base: #fff; --ink-amt: 34%; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) :is(.week-grid, .tl, .pastel) { --tint: 26%; --tint-hover: 36%; --lift: 52%; --ink-base: #fff; --ink-amt: 34%; }
+  :root:not([data-theme="light"]) :is(.week-grid, .timeline, .pastel) { --tint: 26%; --tint-hover: 36%; --lift: 52%; --ink-base: #fff; --ink-amt: 34%; }
 }
 /* A pastel of any color: the color lifted toward white, then washed in. */
 .week-grid .wg-task, .week-grid .wg-event, .pastel {
@@ -3837,9 +3837,9 @@ h1, h2, h3, .empty-big, .story-card h2 { text-wrap: balance; }
 .avatar-pick-buttons button:disabled { opacity: 0.45; cursor: default; }
 
 /* ── Timeline (Timeline.tsx): projects as pastel bars across the months ── */
-.full-content.timeline-page { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
-.tl { --left-w: 260px; flex: 1; min-height: 0; display: flex; flex-direction: column; user-select: none; -webkit-user-select: none; }
-.tl.dragging, .tl.dragging * { cursor: grabbing !important; }
+.full-content.timeline-page { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch; overflow: hidden; padding: 0; }
+.timeline { --left-w: 260px; flex: 1; align-self: stretch; width: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; user-select: none; -webkit-user-select: none; }
+.timeline.dragging, .timeline.dragging * { cursor: grabbing !important; }
 .tl-toolbar { flex: none; display: flex; align-items: center; gap: 14px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
 .tl-zoom { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); }
 .tl-zoom button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 600; padding: 4px 12px; border-radius: 7px; cursor: pointer; transition: background var(--dur-1), color var(--dur-1); }

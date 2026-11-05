@@ -362,7 +362,7 @@ export function Timeline({
 
   const menuFor = menu ? projects.find((p) => p.name === menu.name) : null;
   return (
-    <div className={drag ? "tl dragging" : "tl"}>
+    <div className={drag ? "timeline dragging" : "timeline"}>
       <div className="tl-toolbar">
         <div className="tl-zoom" role="radiogroup" aria-label="Zoom">
           {ZOOMS.map((z) => (

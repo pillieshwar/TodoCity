@@ -1892,7 +1892,7 @@ const TODOIST_LINK = { since: "2026-10-20T10:00:00Z", last: new Date(Date.now() 
 await shot("full-connectors-apps", FULL, full({ settings: DARK, mirror: { things: null, todoist: TODOIST_LINK } }), async (p) => {
   await tab(p, "Connectors");
   const names = await p.locator(".connector-text h3").allTextContents();
-  if (names.join("|") !== "Todoist|Things 3|Apple Calendar|Apple Reminders") throw new Error(`cards: ${names.join(", ")}`);
+  if (names.join("|") !== "Slack|Todoist|Things 3|Apple Calendar|Apple Reminders") throw new Error(`cards: ${names.join(", ")}`);
   if (!(await p.locator(".connector", { hasText: "Todoist" }).first().textContent()).includes("in sync both ways")) throw new Error("Todoist card should say both ways");
   if (await p.locator(".set-item", { hasText: "Import Data" }).count()) throw new Error("Import Data page should be gone");
 });

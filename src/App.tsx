@@ -634,7 +634,7 @@ export default function App() {
     const was = slackPhase.current;
     slackPhase.current = phase;
     if (was !== "checking" || phase === "checking") return;
-    if (phase === "ready") show("Slack is connected. Messages that need you will show up in your Inbox.");
+    if (phase === "ready") show("Slack is connected");
     else if (phase === "needs_slack") show(`Connect Slack to ${slackStatus?.agent_name ?? "your agent"} to finish setting up.`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slackStatus?.phase]);

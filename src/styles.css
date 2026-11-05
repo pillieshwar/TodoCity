@@ -871,9 +871,9 @@ button.small { border-radius: 7px; padding: 4px 10px; font-size: 12px; cursor: p
 .slack-switch { margin-left: 4px; }
 .slack-body { display: flex; flex-direction: column; gap: 10px; }
 .slack-who { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
-.slack-who-text { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 4px; }
+.slack-who-text { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .slack-agent-pick {
-  font: inherit; font-size: 12px; padding: 3px 6px; border-radius: 7px;
+  font: inherit; font-size: 12px; padding: 3px 6px; border-radius: 7px; min-width: 0; max-width: 60%;
   border: 1px solid var(--line); background: var(--paper); color: var(--ink);
 }
 .slack-state { margin: 0; }

@@ -74,7 +74,7 @@ export function SlackBody({ status, error }: { status: SlackStatus; error: strin
       <div className="slack-who">
         <AgentTile agent={status.agent} size={22} />
         <span className="slack-who-text">
-          Read by <b>{name}</b>
+          {installed.length > 1 ? "Read by" : <>Read by <b>{name}</b></>}
           <InfoTip text={SLACK_PRIVACY} label="About the Slack connector" />
         </span>
         {installed.length > 1 && (

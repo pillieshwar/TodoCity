@@ -244,11 +244,14 @@ impl<D: Deliver> Server<D> {
                     vec![tool(self.proactive)]
                 };
                 tools.push(report_tool());
+                // Only answers a check TodoCity started (its token), so it's
+                // offered with or without full access too.
+                tools.push(todocity_core::slack::check_tool());
                 result(&id, json!({ "tools": tools }))
             }
             Some("tools/call") => {
                 let name = params["name"].as_str().unwrap_or("");
-                if name == REPORT_TOOL {
+                if name == REPORT_TOOL || name == todocity_core::slack::CHECK_TOOL {
                     return Some(result(&id, self.run_tool(name, &params["arguments"])));
                 }
                 if (self.full)()
@@ -537,9 +540,10 @@ mod tests {
             .handle(&json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}))
             .unwrap();
         let tools = list["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 2);
+        assert_eq!(tools.len(), 3);
         assert_eq!(tools[0]["name"], "add_task");
         assert_eq!(tools[1]["name"], REPORT_TOOL);
+        assert_eq!(tools[2]["name"], todocity_core::slack::CHECK_TOOL);
         let unknown = s
             .handle(&json!({"jsonrpc":"2.0","id":9,"method":"resources/read"}))
             .unwrap();
@@ -708,6 +712,24 @@ mod tests {
             assert_eq!(fake.calls[0].tool, REPORT_TOOL);
             assert_eq!(fake.calls[0].args["run"], "abc");
             assert!(fake.sent.is_empty());
+        }
+    }
+
+    #[test]
+    fn the_slack_check_reaches_the_app_with_or_without_full_access() {
+        use todocity_core::slack::CHECK_TOOL;
+        for full in [false, true] {
+            let mut fake = Fake::default();
+            {
+                let mut s = Server::new(&mut fake).full_access(move || full);
+                let r = s
+                    .handle(&json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":CHECK_TOOL,"arguments":{"token":"t1","ok":false,"reason":"no_slack"}}}))
+                    .unwrap();
+                assert_eq!(r["result"]["isError"], false);
+            }
+            assert_eq!(fake.calls.len(), 1);
+            assert_eq!(fake.calls[0].tool, CHECK_TOOL);
+            assert_eq!(fake.calls[0].args["token"], "t1");
         }
     }
 

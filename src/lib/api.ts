@@ -18,6 +18,9 @@ import type {
   CalendarInfo,
   CalendarStatus,
   CalendarSyncStatus,
+  SlackAgent,
+  SlackSetupPlan,
+  SlackStatus,
   FocusStatus,
   AgentChange,
   AgentCliStatus,
@@ -127,6 +130,13 @@ export const api = {
   calendarMoveEvent: (m: { id: string; at: string; start: string; end: string; everyone: boolean }) =>
     invoke<CalendarEvent>("calendar_move_event", m),
   calendarOpenPrivacySettings: () => invoke<void>("calendar_open_privacy_settings"),
+  slackStatus: () => invoke<SlackStatus>("slack_status"),
+  /** Agents that can read Slack for TodoCity, and which are installed. */
+  slackAgents: () => invoke<SlackAgent[]>("slack_agents"),
+  /** Turn Slack on: picks the agent and starts its check (also sent as `slack-setup`). */
+  slackConnect: (agent?: string | null) => invoke<SlackSetupPlan>("slack_connect", { agent: agent ?? null }),
+  slackDisconnect: () => invoke<void>("slack_disconnect"),
+  slackCheckNow: () => invoke<void>("slack_check_now"),
   focusStatus: () => invoke<FocusStatus>("focus_status"),
   focusSet: (change: { enabled?: boolean; calendar?: string; shortcut?: string; minutes?: number }) =>
     invoke<FocusStatus>("focus_set", {
@@ -181,6 +191,8 @@ export const api = {
     taskId?: number | null;
     extra?: string | null;
     prompt?: string | null;
+    /** TodoCity tools the agent may use without asking (Claude Code). */
+    allow?: string[] | null;
     cols: number;
     rows: number;
   }) =>
@@ -190,6 +202,7 @@ export const api = {
       taskId: o.taskId ?? null,
       extra: o.extra ?? null,
       prompt: o.prompt ?? null,
+      allow: o.allow ?? null,
       cols: o.cols,
       rows: o.rows,
     }),
@@ -390,6 +403,16 @@ export function onTermExit(handler: (id: number) => void): Promise<UnlistenFn> {
 /** Calendar sync ran, or its choices changed. */
 export function onCalendarSyncChanged(handler: () => void): Promise<UnlistenFn> {
   return listen("calendar-sync-changed", () => handler());
+}
+
+/** The Slack connector was turned on or off, checked Slack, or added tasks. */
+export function onSlackChanged(handler: () => void): Promise<UnlistenFn> {
+  return listen("slack-changed", () => handler());
+}
+
+/** Slack was turned on: start this agent in the panel to check it. */
+export function onSlackSetup(handler: (plan: SlackSetupPlan) => void): Promise<UnlistenFn> {
+  return listen<SlackSetupPlan>("slack-setup", (e) => handler(e.payload));
 }
 
 /** A focus block started, ended or changed. */

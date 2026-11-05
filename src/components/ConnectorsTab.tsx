@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { api, onCalendarChanged, onMirrorChanged, onRemindersChanged } from "../lib/api";
+import { api, onCalendarChanged, onMirrorChanged, onRemindersChanged, onSlackChanged } from "../lib/api";
 import { Toggle } from "./GeneralSettings";
 import { RemindersSection } from "./RemindersSection";
 import { CalendarSyncSection } from "./CalendarSyncSection";
 import { ThingsConnector, ThingsGlyph, TodoistConnector, TodoistGlyph } from "./MoveIn";
-import type { CalendarInfo, CalendarStatus, MirrorStatus, RemindersStatus } from "../lib/types";
+import { SlackBody, SlackGlyph, SlackSwitch } from "./SlackConnector";
+import { slackLine } from "../lib/slack";
+import type { CalendarInfo, CalendarStatus, MirrorStatus, RemindersStatus, SlackStatus } from "../lib/types";
 
 /**
  * Connectors: the apps TodoCity works with — Todoist and Things 3 (move in,
- * then stay in sync), Apple Calendar and Apple Reminders. Each card shows
+ * then stay in sync), Apple Calendar, Apple Reminders and Slack (read by the
+ * person's agent, one switch). Each card shows
  * whether it's connected and opens to its settings. (Agents and Watch have
  * their own pages.)
  */
@@ -22,6 +25,9 @@ export function ConnectorsTab({ onDone }: { onDone: () => void }) {
   const [mirror, setMirror] = useState<MirrorStatus | null>(null);
   const [reminders, setReminders] = useState<RemindersStatus | null>(null);
   const [calendar, setCalendar] = useState<CalendarStatus | null>(null);
+  const [slack, setSlack] = useState<SlackStatus | null>(null);
+  const [slackError, setSlackError] = useState<string | null>(null);
+  const [, setTick] = useState(0);
   const [open, setOpen] = useState<Id | null>(() => {
     const id = openNext;
     openNext = null;
@@ -32,18 +38,43 @@ export function ConnectorsTab({ onDone }: { onDone: () => void }) {
     api.remindersStatus().then(setReminders).catch(() => undefined);
     api.calendarStatus().then(setCalendar).catch(() => undefined);
     api.mirrorStatus().then(setMirror).catch(() => undefined);
+    api.slackStatus().then(setSlack).catch(() => undefined);
   }, []);
 
   useEffect(() => {
     refresh();
-    const subs = [onRemindersChanged(refresh), onCalendarChanged(refresh), onMirrorChanged(refresh)];
-    return () => subs.forEach((p) => void p.then((u) => u()));
+    const subs = [onRemindersChanged(refresh), onCalendarChanged(refresh), onMirrorChanged(refresh), onSlackChanged(refresh)];
+    // "Checked 2 min ago" stays true.
+    const t = window.setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => {
+      subs.forEach((p) => void p.then((u) => u()));
+      window.clearInterval(t);
+    };
   }, [refresh]);
 
   const toggle = (id: Id) => setOpen((o) => (o === id ? null : id));
 
+  const slackOn = !!slack?.enabled;
+
   return (
     <div className="connectors">
+      <ConnectorCard
+        icon={<SlackGlyph />}
+        tone="slack"
+        name="Slack"
+        description={slackLine(slack, new Date())}
+        connected={slackOn && slack?.phase === "ready"}
+        open={slackOn || !!slackError}
+        onToggle={() => undefined}
+        action={<SlackSwitch status={slack} onError={setSlackError} />}
+      >
+        {slack?.enabled ? (
+          <SlackBody status={slack} error={slackError} />
+        ) : (
+          slackError && <p className="rem-error">{slackError}</p>
+        )}
+      </ConnectorCard>
+
       <ConnectorCard
         icon={<TodoistGlyph />}
         tone="app"
@@ -105,7 +136,7 @@ export function ConnectorsTab({ onDone }: { onDone: () => void }) {
   );
 }
 
-export type Id = "todoist" | "things" | "reminders" | "calendar";
+export type Id = "todoist" | "things" | "reminders" | "calendar" | "slack";
 
 function ConnectorCard({
   icon,
@@ -116,6 +147,7 @@ function ConnectorCard({
   connectedLabel = "Connected",
   open,
   onToggle,
+  action,
   children,
 }: {
   icon: ReactNode;
@@ -127,6 +159,8 @@ function ConnectorCard({
   connectedLabel?: string;
   open: boolean;
   onToggle: () => void;
+  /** In place of the Connect button (Slack has a switch). */
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -139,24 +173,26 @@ function ConnectorCard({
           <h3>{name}</h3>
           <p>{description}</p>
         </div>
-        <button
-          type="button"
-          className={connected ? "connector-action connected" : "connector-action"}
-          onClick={onToggle}
-          aria-expanded={open}
-        >
-          {connected ? (
-            <>
-              <span className="connector-dot" aria-hidden /> {connectedLabel}
-            </>
-          ) : open ? (
-            "Close"
-          ) : (
-            <>
-              Connect <span aria-hidden>↗</span>
-            </>
-          )}
-        </button>
+        {action ?? (
+          <button
+            type="button"
+            className={connected ? "connector-action connected" : "connector-action"}
+            onClick={onToggle}
+            aria-expanded={open}
+          >
+            {connected ? (
+              <>
+                <span className="connector-dot" aria-hidden /> {connectedLabel}
+              </>
+            ) : open ? (
+              "Close"
+            ) : (
+              <>
+                Connect <span aria-hidden>↗</span>
+              </>
+            )}
+          </button>
+        )}
       </div>
       {open && <div className="connector-body">{children}</div>}
     </section>

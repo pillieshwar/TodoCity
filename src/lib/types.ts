@@ -514,6 +514,47 @@ export interface FocusStatus {
   error: string | null;
 }
 
+/** Mirrors `slack::SlackStatus`: the Slack connector (an agent reads Slack). */
+export interface SlackStatus {
+  enabled: boolean;
+  phase: "off" | "checking" | "ready" | "needs_slack" | "stalled";
+  /** Why the agent can't read Slack yet. */
+  reason: "no_slack" | "cant_read" | "no_read_tools" | null;
+  detail: string | null;
+  agent: string | null;
+  agent_name: string | null;
+  scanning: boolean;
+  /** Local `YYYY-MM-DDTHH:MM:SS`. */
+  last_checked: string | null;
+  next_check: string | null;
+  covered_until: string | null;
+  last_error: string | null;
+  added: number;
+  activity: SlackActivity[];
+}
+
+export interface SlackActivity {
+  at: string | null;
+  kind: "added" | "ready" | "error" | string;
+  text: string;
+  url: string | null;
+}
+
+/** An agent that can read Slack for TodoCity. */
+export interface SlackAgent {
+  id: string;
+  name: string;
+  installed: boolean;
+}
+
+/** What starts in the agent panel to check Slack (the `slack-setup` event). */
+export interface SlackSetupPlan {
+  agent: string;
+  agent_name: string;
+  prompt: string;
+  allow: string[];
+}
+
 /** Mirrors `calendar::Status`. */
 export interface CalendarStatus {
   supported: boolean;

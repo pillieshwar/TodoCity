@@ -189,7 +189,7 @@ fn usual_places(home: &Path, binary: &str) -> Vec<PathBuf> {
 
 /// Which agents are installed: the usual places, then the person's own
 /// shell (which knows nvm, asdf and the like).
-fn find_installed() -> Vec<String> {
+pub(crate) fn find_installed() -> Vec<String> {
     let home = home();
     let mut found: Vec<String> = agent_runs::CLIS
         .iter()
@@ -423,6 +423,8 @@ fn ended(app: &AppHandle, inner: &Arc<Mutex<Inner>>, id: u32) {
 /// `folder` (home if none). With `task_id`, the agent starts on that task
 /// ("Send to agent"), with `extra` added to its first message; without one,
 /// `prompt` (a ready-made request like "Plan my day") is its first message.
+/// `allow` names TodoCity tools the agent may use without asking (Claude
+/// Code; the Slack connector's check).
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn term_start(
@@ -432,6 +434,7 @@ pub async fn term_start(
     task_id: Option<i64>,
     extra: Option<String>,
     prompt: Option<String>,
+    allow: Option<Vec<String>>,
     cols: u16,
     rows: u16,
 ) -> Result<SessionInfo, String> {
@@ -492,9 +495,13 @@ pub async fn term_start(
     };
 
     let command = crate::agents::exe_path();
-    let args = cli
+    let mut args = cli
         .map(|c| agent_runs::launch_args(c.id, &command, prompt.as_deref()))
         .unwrap_or_default();
+    if let Some(c) = cli {
+        let pre = agent_runs::allow_args(c.id, &allow.unwrap_or_default());
+        args.splice(0..0, pre);
+    }
     let (program, argv) = command_line(cli, &args);
     let pty =
         crate::pty::spawn(&program, &argv, &folder, &terminal_env(), cols, rows).map_err(|e| {

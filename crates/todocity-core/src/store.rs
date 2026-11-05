@@ -607,6 +607,21 @@ impl Store {
             .ok_or(StoreError::NotFound(id))
     }
 
+    /// Whether any task (open or done) came from `url`. The Slack connector
+    /// uses it so a message another Mac already turned into a task isn't
+    /// added again here.
+    pub fn has_source_url(&self, url: &str) -> Result<bool, StoreError> {
+        let found: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT 1 FROM tasks WHERE source_url = ?1 LIMIT 1",
+                [url],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(found.is_some())
+    }
+
     /// Open tasks plus anything completed on or after `done_since`
     /// (`YYYY-MM-DD`, compared against the UTC completion day), ordered for
     /// the day-grouped panel: dated tasks by day, then undated.
@@ -1577,6 +1592,31 @@ mod tests {
         s.insert(task("today", Some("2026-10-13"))).unwrap();
         let titles: Vec<_> = s.list(None).unwrap().into_iter().map(|t| t.title).collect();
         assert_eq!(titles, ["today", "friday", "someday"]);
+    }
+
+    #[test]
+    fn finds_tasks_by_where_they_came_from() {
+        let s = Store::open_in_memory().unwrap();
+        let url = "https://acme.slack.com/archives/D1/p1700000000000100";
+        assert!(!s.has_source_url(url).unwrap());
+        let t = s
+            .insert(NewTask {
+                source_url: Some(url.into()),
+                ..task("Reply to Sam", None)
+            })
+            .unwrap();
+        assert!(s.has_source_url(url).unwrap());
+        assert!(!s.has_source_url("https://acme.slack.com/other").unwrap());
+        // Done still counts.
+        s.update(
+            t.id,
+            TaskPatch {
+                done: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(s.has_source_url(url).unwrap());
     }
 
     #[test]

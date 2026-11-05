@@ -15,6 +15,7 @@
 //! * [`recurrence`] — repeating tasks.
 //! * [`notify`] — when to show due-time notifications.
 //! * [`reminders_sync`] — merge rules for two-way Apple Reminders sync.
+//! * [`slack`] — Slack messages that need the person, as Inbox tasks.
 //! * [`things`] — reading a Things 3 database to move into TodoCity.
 //! * [`todoist`] — reading Todoist (its API or CSV exports) to move in.
 //! * [`mirror`] — keeping TodoCity in step with Things 3 or Todoist.
@@ -47,6 +48,7 @@ pub mod notify;
 pub mod prompt;
 pub mod recurrence;
 pub mod reminders_sync;
+pub mod slack;
 pub mod store;
 pub mod sync;
 pub mod things;

@@ -3793,6 +3793,22 @@ h1, h2, h3, .empty-big, .story-card h2 { text-wrap: balance; }
 .block-pop .sp-body { padding: 2px 18px 18px; }
 .block-pop .dp-bar { height: 36px; border-bottom: 0; }
 
+/* Right-click on a task (TaskMenu.tsx). */
+.task-menu {
+  position: fixed; z-index: 90; min-width: 180px; padding: 5px; box-sizing: border-box; display: flex; flex-direction: column;
+  border-radius: 10px; background: var(--paper); border: 1px solid var(--line);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.08);
+  animation: menu-in var(--dur-1) var(--ease); transform-origin: top left; font-size: 13px;
+}
+.task-menu button {
+  display: flex; align-items: center; min-height: 28px; padding: 0 10px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+}
+.task-menu button:hover, .task-menu button:focus-visible { background: var(--teal); color: #fff; outline: none; }
+.task-menu button.danger { color: var(--danger, #e5484d); }
+.task-menu button.danger:hover, .task-menu button.danger:focus-visible { background: var(--danger, #e5484d); color: #fff; }
+.task-menu-sep { height: 1px; margin: 4px 6px; background: var(--line); }
+
 /* "Reduce motion" on: everything above (and before) is instant. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

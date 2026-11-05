@@ -1,4 +1,5 @@
 import { latestBatch, type BatchNote } from "../lib/agents";
+import { TaskMenuHost, openTaskMenu } from "../components/TaskMenu";
 import { useFlip } from "../lib/useMotion";
 import { AgentIcon } from "../components/WhoSwitch";
 import {
@@ -741,6 +742,7 @@ export default function Popover() {
         </div>
       )}
       <Toasts toasts={toasts} onDismiss={dismiss} />
+      <TaskMenuHost actions={actions} onOpen={openTask} />
       {drag && <DragGhost drag={drag} now={now} locale={LOCALE} />}
     </div>
     </SourceDisplay.Provider>
@@ -798,6 +800,7 @@ function Row({
       data-flip={task.id}
       className={`pop-row ${tone}${task.done ? " checked" : ""}${dragging ? " lifted" : ""}`}
       onPointerDown={onPointerDown ? (e) => onPointerDown(e, task) : undefined}
+      onContextMenu={(e) => openTaskMenu(e, task)}
     >
       <button
         type="button"

@@ -1,4 +1,8 @@
 {
+  "0.4.83": [
+    "Finish or delete a task and the ones below glide up smoothly, section headers too",
+    "Right-click a task to open it, mark it done, duplicate it or delete it"
+  ],
   "0.4.82": [
     "Calendar looks more like Outlook: blocks are filled with their color, hours are taller, and a dashed line marks each half hour",
     "Click a task in Calendar and its details open right next to it",

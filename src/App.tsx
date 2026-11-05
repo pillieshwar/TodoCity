@@ -54,10 +54,13 @@ import {
   onTermExit,
   onSlackChanged,
   onSlackSetup,
+  onAgentActivity,
+  onAgentActivityCleared,
+  onAgentPanelOpen,
 } from "./lib/api";
 import { SlackSetupDialog } from "./components/SlackConnector";
 import { helpConnectPrompt } from "./lib/slack";
-import type { SlackSetupPlan, SlackStatus } from "./lib/types";
+import type { ActivityEntry, SlackSetupPlan, SlackStatus } from "./lib/types";
 import { agentCounts, agentsBy, byAgent, filterWho, latestByTask, type Who } from "./lib/agents";
 import { AgentMarks, AgentsSetUpDialog } from "./components/WhoSwitch";
 import { ViewMenu, whoLabel } from "./components/ViewMenu";
@@ -528,11 +531,35 @@ export default function App() {
     const subs = [onAgentRuns(loadRuns), onTermExit(loadRuns), onTasksChanged(loadRuns)];
     return () => subs.forEach((p) => void p.then((u) => u()));
   }, []);
-  // Which agents are installed: looked up when the panel or the dialog opens.
+  // Which agents are installed: looked up when the panel or the dialog
+  // opens, and again when agents change (found, added, connected, default).
   useEffect(() => {
     if (!agentPane && !sendTask) return;
-    api.agentClis().then(setClis).catch(() => undefined);
+    const load = () => api.agentClis().then(setClis).catch(() => undefined);
+    load();
+    const sub = onAgentChanges(load);
+    return () => void sub.then((u) => u());
   }, [agentPane, sendTask]);
+  const [finding, setFinding] = useState(false);
+  const findAgents = () => {
+    setFinding(true);
+    api
+      .agentClis(true)
+      .then(setClis)
+      .catch((e) => setError(String(e)))
+      .finally(() => setFinding(false));
+  };
+  // The panel's Activity tab: what agents do in the background.
+  const [consoleLines, setConsoleLines] = useState<ActivityEntry[]>([]);
+  const [activityOpen, setActivityOpen] = useState(false);
+  useEffect(() => {
+    api.agentConsole().then(setConsoleLines).catch(() => undefined);
+    const subs = [
+      onAgentActivity((e) => setConsoleLines((a) => (a.some((x) => x.id === e.id) ? a : [...a, e].slice(-300)))),
+      onAgentActivityCleared(() => setConsoleLines([])),
+    ];
+    return () => subs.forEach((p) => void p.then((u) => u()));
+  }, []);
   const panelFolder = folders.last || homeDir;
   const keepFolder = (project: string | null, folder: string) => {
     const next = rememberFolder(folders, project, folder);
@@ -561,6 +588,7 @@ export default function App() {
       if (agent) saveLastAgent(agent);
       setTermSessions(await api.termList());
       setActiveTerm(sess.id);
+      setActivityOpen(false);
       if (full) setAgentPane(true);
       return sess;
     } finally {
@@ -638,6 +666,21 @@ export default function App() {
     else if (phase === "needs_slack") show(`Connect Slack to ${slackStatus?.agent_name ?? "your agent"} to finish setting up.`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slackStatus?.phase]);
+  // Settings → Agents asked for the panel: Connect starts the agent there
+  // (or shows what was done in Activity), Open starts it.
+  useEffect(() => {
+    const sub = onAgentPanelOpen((r) => {
+      showAgentPane();
+      if (r.agent) {
+        void startTerm(r.agent, { folder: homeDir || null, prompt: r.prompt ?? undefined }).catch((e) => {
+          setError(String(e));
+          setActivityOpen(true);
+        });
+      } else setActivityOpen(true);
+    });
+    return () => void sub.then((u) => u());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [homeDir, full, sideW]);
   const slackDialogEl = slackPlan && slackDialog && (
     <SlackSetupDialog
       plan={slackPlan}
@@ -1666,8 +1709,18 @@ export default function App() {
         clis={clis}
         sessions={termSessions}
         active={activeTerm}
-        onActive={setActiveTerm}
+        onActive={(id) => {
+          setActivityOpen(false);
+          setActiveTerm(id);
+        }}
         busy={termBusy}
+        defaultAgent={clis.find((c) => c.default)?.id ?? null}
+        onFindAgents={findAgents}
+        finding={finding}
+        activity={consoleLines}
+        activityOpen={activityOpen}
+        onActivity={() => setActivityOpen(true)}
+        onClearActivity={() => void api.agentConsoleClear().catch(() => undefined)}
         onStart={(agent, prompt) => void startTerm(agent, { prompt }).catch((e) => setError(String(e)))}
         onCloseSession={(id) => {
           void api

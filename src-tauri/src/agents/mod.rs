@@ -766,6 +766,8 @@ pub struct Status {
     /// Every supported AI app and whether it's set up.
     pub apps: Vec<apps::AppStatus>,
     pub pending: usize,
+    /// The agent used when nothing else says which, by id.
+    pub default_agent: Option<String>,
 }
 
 pub(crate) fn exe_path() -> String {
@@ -781,6 +783,16 @@ fn is_temporary(command: &str) -> bool {
 fn status(app: &AppHandle) -> Status {
     let command = exe_path();
     let settings = app.state::<Settings>().get();
+    // An app counts as installed when its command-line agent was found too
+    // (installed with nvm, asdf and the like, in no usual place).
+    let found = crate::agent_panel::installed_cached(app);
+    let mut app_list = apps::statuses(&command);
+    for a in &mut app_list {
+        let cli_found = todocity_core::agent_runs::CLIS
+            .iter()
+            .any(|c| c.connector == Some(a.id) && found.iter().any(|f| f == c.id));
+        a.installed |= cli_found;
+    }
     Status {
         supported: cfg!(unix),
         enabled: settings.agents_enabled,
@@ -788,9 +800,10 @@ fn status(app: &AppHandle) -> Status {
         full_access: settings.agents_full_access,
         tool_count: todocity_core::agent_tools::names().len(),
         temporary_location: is_temporary(&command),
-        apps: apps::statuses(&command),
+        apps: app_list,
         command,
         pending: app.state::<Agents>().items().len(),
+        default_agent: settings.default_agent.clone(),
     }
 }
 

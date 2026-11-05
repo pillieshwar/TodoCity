@@ -1,4 +1,10 @@
 {
+  "0.4.87": [
+    "Settings → Agents shows every agent on your Mac as a card, including ones installed with nvm, asdf or mise. Check for agents looks again; Add agent… lets you pick one yourself",
+    "Connect opens the agent beside your tasks and connects it there, so you can see what it's doing and type to it if it needs a hand",
+    "Pick a default agent for Slack, the agent panel and Send to agent. For Slack, an agent that already has Slack comes first",
+    "The agent panel lists all your agents, with Find agents, and a new Activity tab that shows what they do in the background, like each Slack check"
+  ],
   "0.4.86": [
     "Slack, in one switch: turn on Slack in Settings → Connectors, and messages that need you (DMs, group DMs, mentions) show up as tasks in your Inbox",
     "Your own agent does the reading: Claude Code, Codex or Cursor Agent, with the Slack connection it already has. TodoCity opens it beside your tasks so you can watch it check Slack, and tells you when it's ready",

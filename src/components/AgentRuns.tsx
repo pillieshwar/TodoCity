@@ -258,19 +258,21 @@ export function SendToAgentDialog({
   task: Task;
   clis: AgentCliStatus[];
   folder: string;
+  /** The agent used last time; the default agent (Settings → Agents) comes first. */
   lastAgent: string | null;
   onStart: (agent: string, folder: string, extra: string) => Promise<void>;
   onClose: () => void;
 }) {
   const installed = clis.filter((c) => c.installed);
-  const [agent, setAgent] = useState<string | null>(() => defaultAgent(installed.map((c) => c.id), lastAgent));
+  const preferred = clis.find((c) => c.default)?.id ?? null;
+  const [agent, setAgent] = useState<string | null>(() => defaultAgent(installed.map((c) => c.id), lastAgent, preferred));
   const [folder, setFolder] = useState(startFolder);
   const [extra, setExtra] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const go = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (!agent && installed.length) setAgent(defaultAgent(installed.map((c) => c.id), lastAgent));
+    if (!agent && installed.length) setAgent(defaultAgent(installed.map((c) => c.id), lastAgent, preferred));
   }, [installed.length]); // eslint-disable-line react-hooks/exhaustive-deps
   // Return starts it: Start has the focus as soon as there's an agent.
   useEffect(() => {
@@ -307,11 +309,12 @@ export function SendToAgentDialog({
               <button key={c.id} type="button" role="radio" aria-checked={agent === c.id} className={agent === c.id ? "send-agent on" : "send-agent"} onClick={() => setAgent(c.id)}>
                 <AgentTile agent={c.id} size={28} />
                 <span>{c.name}</span>
+                {c.default && <small className="send-default">Default</small>}
               </button>
             ))}
           </div>
         ) : (
-          <p className="send-install">Install Claude Code, Codex, Gemini CLI or Cursor Agent, then send tasks to it from here.</p>
+          <p className="send-install">Install Claude Code, Codex, Gemini CLI or Cursor Agent (or add yours in Settings → Agents), then send tasks to it from here.</p>
         )}
         <label className="send-field">
           <span>Work in</span>

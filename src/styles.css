@@ -1007,6 +1007,38 @@ button.small { border-radius: 7px; padding: 4px 10px; font-size: 12px; cursor: p
 .agent-app-row { padding: 8px 10px 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .agent-app-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .agent-warn { font-size: 12px; font-weight: 600; color: var(--amber); }
+/* Settings → Agents: one card per agent, with Check for agents and Add agent… */
+.agent-cards-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.agent-cards-head .set-subhead { margin: 0; }
+.agent-cards-actions { display: flex; gap: 6px; }
+.agent-default { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0 8px; font-size: 13px; }
+.agent-default > span { display: inline-flex; align-items: center; gap: 4px; }
+.agent-default select {
+  font: inherit; font-size: 12.5px; padding: 4px 8px; border-radius: 8px; max-width: 60%;
+  border: 1px solid var(--line); background: var(--paper); color: var(--ink);
+}
+.agent-cards { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.agent-card {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--panel);
+}
+.agent-card.is-default { border-color: color-mix(in srgb, var(--teal) 45%, var(--line)); }
+.agent-card .agent-tile { flex: none; border-radius: 8px; }
+.agent-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.agent-card-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+.agent-card-text small { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-card-path { color: var(--faint); }
+.agent-card-links { display: flex; gap: 12px; }
+.agent-card-links .link-btn { font-size: 11.5px; padding: 0; }
+.agent-card-actions { flex: none; display: flex; gap: 6px; }
+.agent-badge {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; padding: 1px 7px; border-radius: 99px;
+  background: var(--teal-soft); color: var(--teal);
+}
+.agent-cards-empty { padding: 14px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.agent-cards-empty p { margin: 0; }
+.agent-note { color: var(--teal); }
+.send-default { margin-left: auto; font-size: 10.5px; font-weight: 700; color: var(--teal); }
 .agent-all { align-self: flex-start; margin-top: 2px; }
 .agent-apps .agent-app-hint { margin: 4px 0 0; }
 .link-btn.quiet { color: var(--muted); font-size: 12px; }
@@ -3294,6 +3326,27 @@ button.tf-chip { cursor: pointer; }
 }
 .ap-agent:hover:not(:disabled) { border-color: var(--teal); }
 .ap-agent:disabled { opacity: 0.6; cursor: default; }
+.ap-agent.is-default { border-color: color-mix(in srgb, var(--teal) 55%, var(--line)); }
+.ap-find { color: var(--muted); }
+.ap-find > span:first-child { width: 22px; text-align: center; font-size: 14px; }
+/* The Activity tab: background work by agents, like a console. */
+.ap-tab-activity .ap-act-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+.ap-tab-activity .ap-act-dot.live { background: var(--teal); animation: onboard-pulse 1.2s ease-in-out infinite; }
+.ap-activity { flex: 1; min-height: 0; display: flex; flex-direction: column; background: #1b1a18; color: #e8e6e1; position: relative; }
+.ap-activity-list { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px 34px; font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; }
+.ap-activity-empty { color: #a8a49b; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12.5px; }
+.ap-act { display: flex; align-items: flex-start; gap: 8px; padding: 2px 0; }
+.ap-act .agent-tile { margin-top: 2px; border-radius: 3px; flex: none; }
+.ap-act-time { flex: none; color: #8a867d; min-width: 62px; }
+.ap-act-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ap-act-working .ap-act-text { color: #9fd4e0; }
+.ap-act-ok .ap-act-text { color: #a7dba0; }
+.ap-act-added .ap-act-text { color: #e8e6e1; font-weight: 600; }
+.ap-act-error .ap-act-text { color: #f0b37e; }
+.ap-activity-clear {
+  position: absolute; right: 10px; bottom: 8px; border: 1px solid #3a3833; background: #26241f; color: #c9c5bc;
+  font-size: 11px; padding: 2px 10px; border-radius: 6px; cursor: pointer;
+}
 .ap-folder {
   align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
   border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; cursor: pointer;

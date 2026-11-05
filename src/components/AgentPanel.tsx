@@ -5,7 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 import { api, onTermOutput } from "../lib/api";
 import { monogram, PANEL_PROMPTS, shortFolder } from "../lib/agentRuns";
 import { iconFor, needsDarkTile, useAppIcons } from "../lib/agentIcons";
-import type { AgentCliStatus, TermSession } from "../lib/types";
+import type { ActivityEntry, AgentCliStatus, TermSession } from "../lib/types";
 
 /** An agent's logo (its official file, or its app's icon), else a lettered tile; a prompt sign for a plain terminal. */
 export function AgentTile({ agent, size = 24 }: { agent: string | null; size?: number }) {
@@ -107,6 +107,43 @@ function TermView({ session }: { session: TermSession }) {
   return <div className="term-view" ref={box} data-nodrag />;
 }
 
+/** "10:05 AM" for a local `YYYY-MM-DDTHH:MM:SS`. */
+function clockOf(at: string): string {
+  const d = new Date(at);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+/** The Activity tab: what agents do in the background (connecting, Slack checks), live. */
+function ActivityView({ entries, onClear }: { entries: ActivityEntry[]; onClear: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = box.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [entries.length]);
+  return (
+    <div className="ap-activity" data-nodrag>
+      <div className="ap-activity-list" ref={box} role="log" aria-live="polite" aria-label="Agent activity">
+        {entries.length === 0 ? (
+          <p className="ap-activity-empty">What your agents do in the background shows here: connecting, Slack checks and tasks they add.</p>
+        ) : (
+          entries.map((e) => (
+            <div key={e.id} className={`ap-act ap-act-${e.kind}`}>
+              <span className="ap-act-time">{clockOf(e.at)}</span>
+              <AgentTile agent={e.agent ?? (e.source === "slack" ? "slack" : null)} size={14} />
+              <span className="ap-act-text">{e.text}</span>
+            </div>
+          ))
+        )}
+      </div>
+      {entries.length > 0 && (
+        <button type="button" className="ap-activity-clear" onClick={onClear}>
+          Clear
+        </button>
+      )}
+    </div>
+  );
+}
+
 /**
  * The agent panel, beside the list: start an agent (or a plain terminal),
  * switch between open ones, and ask for the usual things in one click.
@@ -125,6 +162,13 @@ export function AgentPanel({
   fullAccess,
   onSettings,
   busy,
+  defaultAgent,
+  onFindAgents,
+  finding,
+  activity,
+  activityOpen,
+  onActivity,
+  onClearActivity,
 }: {
   clis: AgentCliStatus[];
   sessions: TermSession[];
@@ -139,11 +183,24 @@ export function AgentPanel({
   fullAccess: boolean;
   onSettings: () => void;
   busy: boolean;
+  /** The default agent (Settings → Agents), first in the list and for ready-made requests. */
+  defaultAgent?: string | null;
+  /** Look for agents on this Mac again. */
+  onFindAgents?: () => void;
+  finding?: boolean;
+  activity?: ActivityEntry[];
+  /** The Activity tab is showing (instead of a terminal). */
+  activityOpen?: boolean;
+  onActivity?: () => void;
+  onClearActivity?: () => void;
 }) {
   const installed = clis.filter((c) => c.installed);
   const current = sessions.find((s) => s.id === active) ?? sessions[sessions.length - 1] ?? null;
   const [asking, setAsking] = useState(false);
-  const agentFor = current?.agent ?? installed[0]?.id ?? null;
+  const preferred = installed.find((c) => c.id === defaultAgent) ?? installed[0];
+  const agentFor = current?.agent ?? preferred?.id ?? null;
+  const entries = activity ?? [];
+  const showActivity = !!activityOpen;
 
   /** A ready-made request: typed into the open agent, or a new one started with it. */
   function ask(text: string) {
@@ -160,7 +217,14 @@ export function AgentPanel({
       <div className="ap-head">
         <div className="ap-start" role="group" aria-label="Start">
           {installed.map((c) => (
-            <button key={c.id} type="button" className="ap-agent" disabled={busy} onClick={() => onStart(c.id)} title={`Start ${c.name} in ${shortFolder(folder, home)}`}>
+            <button
+              key={c.id}
+              type="button"
+              className={c.id === defaultAgent ? "ap-agent is-default" : "ap-agent"}
+              disabled={busy}
+              onClick={() => onStart(c.id)}
+              title={`Start ${c.name} in ${shortFolder(folder, home)}${c.id === defaultAgent ? " (your default agent)" : ""}${c.slack ? " · has Slack" : ""}`}
+            >
               <AgentTile agent={c.id} size={22} />
               <span>{c.name}</span>
             </button>
@@ -169,6 +233,12 @@ export function AgentPanel({
             <AgentTile agent={null} size={22} />
             <span>Terminal</span>
           </button>
+          {onFindAgents && (
+            <button type="button" className="ap-agent ap-find" disabled={finding} onClick={onFindAgents} title="Look for agents on this Mac again">
+              <span aria-hidden>{finding ? "…" : "↻"}</span>
+              <span>{finding ? "Looking…" : "Find agents"}</span>
+            </button>
+          )}
         </div>
         <button type="button" className="ap-folder" onClick={onPickFolder} title="Change the folder new sessions start in">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -178,11 +248,19 @@ export function AgentPanel({
         </button>
       </div>
 
-      {sessions.length > 0 && (
+      {(sessions.length > 0 || entries.length > 0) && (
         <div className="ap-tabs" role="tablist" aria-label="Open sessions">
+          {entries.length > 0 && onActivity && (
+            <div className={showActivity ? "ap-tab on ap-tab-activity" : "ap-tab ap-tab-activity"} role="presentation">
+              <button type="button" role="tab" aria-selected={showActivity} onClick={onActivity} title="What your agents are doing in the background">
+                <span className={entries.some((e) => e.kind === "working") && entries[entries.length - 1]?.kind === "working" ? "ap-act-dot live" : "ap-act-dot"} aria-hidden />
+                <span className="ap-tab-title">Activity</span>
+              </button>
+            </div>
+          )}
           {sessions.map((s) => (
-            <div key={s.id} className={s.id === current?.id ? "ap-tab on" : "ap-tab"} role="presentation">
-              <button type="button" role="tab" aria-selected={s.id === current?.id} onClick={() => onActive(s.id)} title={`${s.name} · ${shortFolder(s.folder, home)}`}>
+            <div key={s.id} className={!showActivity && s.id === current?.id ? "ap-tab on" : "ap-tab"} role="presentation">
+              <button type="button" role="tab" aria-selected={!showActivity && s.id === current?.id} onClick={() => onActive(s.id)} title={`${s.name} · ${shortFolder(s.folder, home)}`}>
                 <AgentTile agent={s.agent} size={16} />
                 <span className="ap-tab-title">{s.task_id ? s.title : s.name}</span>
                 {!s.alive && <span className="ap-tab-ended">ended</span>}
@@ -196,7 +274,9 @@ export function AgentPanel({
       )}
 
       <div className="ap-body">
-        {current ? (
+        {showActivity ? (
+          <ActivityView entries={entries} onClear={() => onClearActivity?.()} />
+        ) : current ? (
           <TermView key={current.id} session={current} />
         ) : (
           <div className="ap-empty">
@@ -204,7 +284,7 @@ export function AgentPanel({
             <p>
               {installed.length
                 ? "Start an agent above. It can see TodoCity's tools, so you can ask it to plan your day, tidy your Inbox or work on a task."
-                : "Install Claude Code, Codex, Gemini CLI or Cursor Agent to start one here. A plain Terminal works too."}
+                : "Install Claude Code, Codex, Gemini CLI or Cursor Agent, then choose Find agents. Or add your own in Settings → Agents. A plain Terminal works too."}
             </p>
             {agentFor && (
               <div className="ap-prompts">

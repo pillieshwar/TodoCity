@@ -7,6 +7,7 @@
 //!   request) → user confirms the date → `add_task` (one SQLite write).
 //!   The runtime stops itself after a few idle minutes.
 
+mod activity;
 mod agent_panel;
 mod agents;
 mod app_icons;
@@ -1635,6 +1636,7 @@ pub fn run() {
             app.manage(calsync::CalendarSync::start(app.handle(), &data_dir));
             app.manage(focus::FocusService::new(&data_dir));
             app.manage(slack::SlackService::new(&data_dir));
+            app.manage(activity::Activity::default());
             mirror::Mirror::start(app.handle());
 
             // Every 30 s: release the model's memory when idle, and roll the
@@ -1853,6 +1855,13 @@ pub fn run() {
             agents::agent_activity,
             agents::agent_undo,
             agent_panel::agent_clis,
+            agent_panel::agents_add_custom,
+            agent_panel::agents_remove_custom,
+            agent_panel::agents_set_default,
+            agent_panel::agent_panel_open,
+            agent_panel::agents_connect_in_panel,
+            activity::agent_console,
+            activity::agent_console_clear,
             agent_panel::agent_run_list,
             agent_panel::agent_run_dismiss,
             agent_panel::agent_run_transcript,

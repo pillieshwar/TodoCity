@@ -246,7 +246,9 @@ export function SecretaryRoutine({ agentName, startOpen }: { agentName: string; 
             <li>
               <span className="sec-n">3</span>
               <div>
-                <b>Make a task</b> for each message that asks you to do, answer, decide, review, approve or send something.
+                <span>
+                  <b>Make a task</b> for each message that asks you to do, answer, decide, review, approve or send something.
+                </span>
                 <label className="sec-check">
                   <input type="checkbox" checked={draft.priority} onChange={() => flip("priority")} /> Give each task a priority: urgent, high or medium
                 </label>
@@ -255,7 +257,9 @@ export function SecretaryRoutine({ agentName, startOpen }: { agentName: string; 
             <li>
               <span className="sec-n">4</span>
               <div>
-                <b>Follow your own rules</b> <small>(optional)</small>
+                <span>
+                  <b>Follow your own rules</b> <small>(optional)</small>
+                </span>
                 <textarea
                   className="sec-rules"
                   value={rulesText}
@@ -274,7 +278,9 @@ export function SecretaryRoutine({ agentName, startOpen }: { agentName: string; 
             <li>
               <span className="sec-n">5</span>
               <div>
-                <b>Add them to your Inbox</b>, one task per message, with where it came from.
+                <span>
+                  <b>Add them to your Inbox</b>, one task per message, with where it came from.
+                </span>
               </div>
             </li>
           </ol>

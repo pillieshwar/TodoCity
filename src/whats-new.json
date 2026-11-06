@@ -1,4 +1,8 @@
 {
+  "0.4.91": [
+    "Timeline: click a section's bar to open just that section; a project's bar still opens the whole project",
+    "A project whose sections are planned now shows under On the timeline, even before the project has its own dates"
+  ],
   "0.4.90": [
     "Timeline: give a project's sections their own bars. Press + beside a project and tick the sections you want",
     "Section bars sit under their project and move, stretch and open just like project bars"

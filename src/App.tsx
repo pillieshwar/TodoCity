@@ -2136,7 +2136,11 @@ export default function App() {
                     })()}
                     today={today}
                     locale={LOCALE}
-                    onOpen={(name) => setList(projectList(name))}
+                    onOpen={(name, section) => {
+                      // A section's bar opens that section's page; a project's, the whole project.
+                      setList(projectList(name));
+                      setFloorView(section ? { project: name, floor: section } : null);
+                    }}
                     onPlan={(name, span) =>
                       api
                         .setProjectPlan(name, span?.start ?? null, span?.end ?? null)

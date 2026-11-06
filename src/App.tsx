@@ -2146,6 +2146,16 @@ export default function App() {
                           throw e;
                         })
                     }
+                    sections={floorList}
+                    onPlanSection={(project, section, span) =>
+                      api
+                        .setFloorPlan(project, section, span?.start ?? null, span?.end ?? null)
+                        .then(() => refresh())
+                        .catch((e) => {
+                          setError(String(e));
+                          throw e;
+                        })
+                    }
                     onColor={(name, color) =>
                       void api
                         .setProjectColor(name, color)

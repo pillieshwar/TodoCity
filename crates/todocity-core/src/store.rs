@@ -452,6 +452,13 @@ CREATE TABLE focus_tasks (
 ALTER TABLE projects ADD COLUMN plan_start TEXT;
 ALTER TABLE projects ADD COLUMN plan_end TEXT;
 "#,
+    // A section's own span on the Timeline (shown under its project when set).
+    r#"
+ALTER TABLE floors ADD COLUMN plan_start TEXT;
+ALTER TABLE floors ADD COLUMN plan_end TEXT;
+-- A section changed in place (its span) is something to send, too.
+CREATE TRIGGER sync_dirty_floor_upd AFTER UPDATE ON floors BEGIN UPDATE sync_state SET value = CAST(value AS INTEGER) + 1 WHERE key = 'dirty'; END;
+"#,
 ];
 
 /// One task to bring in from another app, with its history.
@@ -508,6 +515,9 @@ pub struct FloorSummary {
     pub name: String,
     pub open: i64,
     pub done: i64,
+    /// Its own span on the Timeline (first and last day), if added there.
+    pub plan_start: Option<String>,
+    pub plan_end: Option<String>,
 }
 
 /// A project and how far along it is.
@@ -973,7 +983,9 @@ impl Store {
     /// Every heading of every project (floors), with task counts.
     pub fn floors(&self) -> Result<Vec<FloorSummary>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT f.project, f.name, COALESCE(SUM(t.done = 0), 0), COALESCE(SUM(t.done = 1), 0)
+            "SELECT f.project, f.name, COALESCE(SUM(t.done = 0), 0), COALESCE(SUM(t.done = 1), 0),
+                    (SELECT plan_start FROM floors c WHERE c.project = f.project AND c.name = f.name),
+                    (SELECT plan_end FROM floors c WHERE c.project = f.project AND c.name = f.name)
              FROM (SELECT project, name FROM floors
                    UNION SELECT project, heading FROM tasks WHERE project IS NOT NULL AND heading IS NOT NULL) f
              LEFT JOIN tasks t ON t.project = f.project AND t.heading = f.name
@@ -985,6 +997,8 @@ impl Store {
                 name: r.get(1)?,
                 open: r.get(2)?,
                 done: r.get(3)?,
+                plan_start: r.get(4)?,
+                plan_end: r.get(5)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1093,6 +1107,42 @@ impl Store {
         self.conn.execute(
             "UPDATE projects SET plan_start = ?2, plan_end = ?3 WHERE name = ?1",
             params![name, start, end],
+        )?;
+        Ok(true)
+    }
+
+    /// Give a section its own bar on the Timeline, under its project (the
+    /// section and project are made if needed), or take it off with `None`.
+    /// Returns false, and changes nothing, for a day that isn't a real date.
+    pub fn set_floor_plan(
+        &self,
+        project: &str,
+        name: &str,
+        span: Option<(&str, &str)>,
+    ) -> Result<bool, StoreError> {
+        let day = |d: &str| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok();
+        let (start, end) = match span {
+            None => (None, None),
+            Some((a, b)) => match (day(a), day(b)) {
+                (Some(a), Some(b)) => {
+                    let (a, b) = if a <= b { (a, b) } else { (b, a) };
+                    (
+                        Some(a.format("%Y-%m-%d").to_string()),
+                        Some(b.format("%Y-%m-%d").to_string()),
+                    )
+                }
+                _ => return Ok(false),
+            },
+        };
+        let Some(project) = self.create_project(project)? else {
+            return Ok(false);
+        };
+        let Some(floor) = self.add_floor(&project, name)? else {
+            return Ok(false);
+        };
+        self.conn.execute(
+            "UPDATE floors SET plan_start = ?3, plan_end = ?4 WHERE project = ?1 AND name = ?2",
+            params![project, floor, start, end],
         )?;
         Ok(true)
     }
@@ -2453,6 +2503,42 @@ mod tests {
             .unwrap()
             .iter()
             .any(|p| p.name == "New" && p.plan_end.as_deref() == Some("2027-03-31")));
+        // A section's own bar: made with its section, either order, real days only, and off again.
+        assert!(s
+            .set_floor_plan("P", "Design", Some(("2026-12-10", "2026-11-20")))
+            .unwrap());
+        let f = s
+            .floors()
+            .unwrap()
+            .into_iter()
+            .find(|f| f.project == "P" && f.name == "Design")
+            .unwrap();
+        assert_eq!(
+            (f.plan_start.as_deref(), f.plan_end.as_deref()),
+            (Some("2026-11-20"), Some("2026-12-10"))
+        );
+        assert!(!s
+            .set_floor_plan("P", "Design", Some(("2026-13-01", "2026-12-01")))
+            .unwrap());
+        // Renaming the section keeps its bar.
+        s.rename_floor("P", "Design", "Build").unwrap();
+        let f = s
+            .floors()
+            .unwrap()
+            .into_iter()
+            .find(|f| f.name == "Build")
+            .unwrap();
+        assert_eq!(f.plan_end.as_deref(), Some("2026-12-10"));
+        assert!(s.set_floor_plan("P", "Build", None).unwrap());
+        assert_eq!(
+            s.floors()
+                .unwrap()
+                .into_iter()
+                .find(|f| f.name == "Build")
+                .unwrap()
+                .plan_start,
+            None
+        );
         assert!(s.set_project_plan("P", None).unwrap());
         let p_of = |s: &Store| {
             s.projects()

@@ -4076,6 +4076,34 @@ h1, h2, h3, .empty-big, .story-card h2 { text-wrap: balance; }
 .tl-swatch.on { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--pastel-line); }
 .tl-menu button[role="menuitem"] { min-height: 30px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
 .tl-menu button[role="menuitem"]:hover { background: var(--teal); color: #fff; }
+/* Sections on the Timeline: picked with the + beside a project, drawn under it as slimmer bars. */
+.tl-add {
+  flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border-radius: 6px;
+  border: 1px solid transparent; background: transparent; color: var(--faint); cursor: pointer;
+  opacity: 0; transition: opacity var(--dur-1), background var(--dur-1), color var(--dur-1);
+}
+.tl-row:hover .tl-add, .tl-add:focus-visible, .tl-add.has { opacity: 1; }
+.tl-add:hover { background: var(--panel); border-color: var(--line); color: var(--ink); }
+.tl-add-count { font-size: 11px; font-weight: 700; color: var(--teal); }
+.tl-row.section { height: 38px; }
+.tl-row.section .tl-left { padding-left: 34px; }
+.tl-row.section .tl-open { font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.tl-row.section .tl-open:hover { color: var(--teal); }
+.tl-branch {
+  flex: none; width: 10px; height: 14px; margin-top: -10px; box-sizing: border-box;
+  border-left: 1.5px solid var(--pastel-line); border-bottom: 1.5px solid var(--pastel-line); border-bottom-left-radius: 5px;
+}
+.tl-item.section { top: 7px; height: 24px; border-radius: 8px; border-width: 1px; background: color-mix(in srgb, var(--pastel-bg) 75%, var(--paper)); }
+.tl-item.section .tl-name { font-size: 12px; font-weight: 600; }
+.tl-item.section .tl-ring { width: 13px; height: 13px; }
+.tl-row.section .tl-off { top: 7px; height: 22px; }
+.tl-sections { width: 250px; }
+.tl-check { display: flex; align-items: center; gap: 9px; min-height: 32px; padding: 0 8px; border-radius: 7px; cursor: pointer; font-size: 13px; }
+.tl-check:hover { background: var(--panel); }
+.tl-check input { margin: 0; accent-color: var(--teal); width: 15px; height: 15px; }
+.tl-check-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.tl-check-span { flex: none; font-size: 11.5px; color: var(--faint); }
+.tl-menu-note { margin: 0 6px 6px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
 
 /* "Reduce motion" on: everything above (and before) is instant. */
 @media (prefers-reduced-motion: reduce) {

@@ -250,6 +250,29 @@ fn set_project_plan(
     Ok(ok)
 }
 
+/// Give a section its own bar on the Timeline (`YYYY-MM-DD` to
+/// `YYYY-MM-DD`), or take it off when both are missing.
+#[tauri::command]
+fn set_floor_plan(
+    app: AppHandle,
+    project: String,
+    name: String,
+    start: Option<String>,
+    end: Option<String>,
+) -> CmdResult<bool> {
+    let ok = {
+        let state = app.state::<AppState>();
+        let store = state.store.lock().map_err(err)?;
+        let span = match (start.as_deref(), end.as_deref()) {
+            (Some(a), Some(b)) => Some((a, b)),
+            _ => None,
+        };
+        store.set_floor_plan(&project, &name, span).map_err(err)?
+    };
+    let _ = app.emit("tasks-changed", ());
+    Ok(ok)
+}
+
 /// Every task in a project, done ones too.
 #[tauri::command]
 fn project_tasks(state: State<'_, AppState>, project: String) -> CmdResult<Vec<Task>> {
@@ -1822,6 +1845,7 @@ pub fn run() {
             project_tasks,
             set_project_color,
             set_project_plan,
+            set_floor_plan,
             delete_project,
             delete_floor,
             skip_occurrence,

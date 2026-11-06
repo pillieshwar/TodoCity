@@ -633,6 +633,9 @@ export interface FloorSummary {
   name: string;
   open: number;
   done: number;
+  /** Its own span on the Timeline (`YYYY-MM-DD`), if added there. */
+  plan_start?: string | null;
+  plan_end?: string | null;
 }
 
 /** Mirrors `todocity_core::things::Options`. */

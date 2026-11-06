@@ -72,6 +72,9 @@ export const api = {
   setProjectColor: (name: string, color: string | null) => invoke<void>("set_project_color", { name, color }),
   /** Put a project on the Timeline (`YYYY-MM-DD` to `YYYY-MM-DD`), or take it off with nulls. */
   setProjectPlan: (name: string, start: string | null, end: string | null) => invoke<boolean>("set_project_plan", { name, start, end }),
+  /** Give a section its own bar on the Timeline, or take it off with nulls. */
+  setFloorPlan: (project: string, name: string, start: string | null, end: string | null) =>
+    invoke<boolean>("set_floor_plan", { project, name, start, end }),
   /** Every task in a project, done ones too. */
   projectTasks: (project: string) => invoke<Task[]>("project_tasks", { project }),
   /** Take down an empty project (false while it has tasks). */

@@ -20,22 +20,6 @@ const hm = (offsetMin) => {
   const d = new Date(Date.now() + offsetMin * 60000);
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
-// What slack_secretary_routine/save answer in the fake backend.
-const fakeRoutineView = (routine, every) => {
-  const parts = [routine.dms && "DMs", routine.group_dms && "group DMs", routine.mentions && "mentions", routine.channels.length === 1 ? `#${routine.channels[0].name}` : routine.channels.length > 1 ? `${routine.channels.length} channels` : null].filter(Boolean);
-  const summary = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : (parts[0] ?? "nothing");
-  const channels = routine.channels.length
-    ? `Channels to read, and no others: ${routine.channels.map((c) => `#${c.name} (${c.id})`).join(", ")}.`
-    : "Don't read any channels.";
-  const rules = routine.rules ? `\n\nThe user's own rules for this:\n${routine.rules}` : "";
-  return {
-    routine,
-    every_min: every,
-    choices: [5, 10, 15, 30, 60],
-    summary,
-    preview: `You're helping TodoCity, the user's to-do app, find Slack messages that need the user.\n\nLook only at ${summary}. ${channels}${rules}`,
-  };
-};
 const localStamp = (offsetMin) => {
   const d = new Date(Date.now() + offsetMin * 60000);
   return `${iso(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
@@ -227,6 +211,22 @@ function mockTauri(s) {
   const callbacks = new Map();
   const listeners = new Map();
   let id = 1;
+  // What slack_secretary_routine/save answer in the fake backend.
+  const fakeRoutineView = (routine, every) => {
+    const parts = [routine.dms && "DMs", routine.group_dms && "group DMs", routine.mentions && "mentions", routine.channels.length === 1 ? `#${routine.channels[0].name}` : routine.channels.length > 1 ? `${routine.channels.length} channels` : null].filter(Boolean);
+    const summary = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : (parts[0] ?? "nothing");
+    const channels = routine.channels.length
+      ? `Channels to read, and no others: ${routine.channels.map((c) => `#${c.name} (${c.id})`).join(", ")}.`
+      : "Don't read any channels.";
+    const rules = routine.rules ? `\n\nThe user's own rules for this:\n${routine.rules}` : "";
+    return {
+      routine,
+      every_min: every,
+      choices: [5, 10, 15, 30, 60],
+      summary,
+      preview: `You're helping TodoCity, the user's to-do app, find Slack messages that need the user.\n\nLook only at ${summary}. ${channels}${rules}`,
+    };
+  };
   window.__emit = (event, payload) => {
     for (const cb of listeners.get(event) ?? []) callbacks.get(cb)?.({ event, id: 0, payload });
   };

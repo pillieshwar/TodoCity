@@ -35,6 +35,7 @@ mod settings;
 mod shortcuts;
 mod slack;
 mod slack_cleanup;
+mod slack_secretary;
 mod spaces;
 mod sync;
 mod tray;
@@ -1558,6 +1559,11 @@ pub fn run_mcp() -> i32 {
     agents::mcp::run()
 }
 
+/// Slack Secretary's background check (`TodoCity --slack-secretary`).
+pub fn run_slack_secretary() -> i32 {
+    slack_secretary::run_background()
+}
+
 pub fn run() {
     init_logging();
     let builder = tauri::Builder::default()
@@ -1749,6 +1755,13 @@ pub fn run() {
             agent_panel::start(app.handle());
             // Slack messages that need the person, as Inbox tasks.
             slack::start(app.handle());
+            // Keep Slack Secretary's background task pointing at this copy.
+            {
+                let handle = app.handle().clone();
+                let _ = std::thread::Builder::new()
+                    .name("slack-secretary".into())
+                    .spawn(move || slack_secretary::ensure(&handle));
+            }
             watch::start(app.handle());
             double_copy::start(app.handle());
             Ok(())
@@ -1904,6 +1917,7 @@ pub fn run() {
             slack::slack_connect,
             slack::slack_disconnect,
             slack::slack_check_now,
+            slack_secretary::slack_secretary_set,
             focus::focus_set,
             focus::focus_make_calendar,
             focus::focus_try,

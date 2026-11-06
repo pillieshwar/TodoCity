@@ -12,6 +12,69 @@ export function SlackGlyph({ size = 20 }: { size?: number }) {
   return logo ? <img src={logo.src} width={size} height={size} alt="" aria-hidden /> : null;
 }
 
+export const SECRETARY_ABOUT =
+  "A background task on your Mac checks Slack every 5 minutes, even when TodoCity is closed. If your Mac was off or asleep, it catches up on those hours. It looks at your DMs, group DMs and the channels you're in, and gives each task a priority. macOS lists it under System Settings → General → Login Items.";
+
+/** The Slack Secretary switch and how it's doing, in the Slack card. */
+export function SecretaryRow({ status }: { status: SlackStatus }) {
+  const sec = status.secretary;
+  const on = !!sec?.on;
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
+  async function set(v: boolean) {
+    setErr(null);
+    setBusy(true);
+    try {
+      await api.slackSecretarySet(v);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className={on ? "slack-secretary on" : "slack-secretary"}>
+      <div className="slack-secretary-head">
+        <span className="slack-secretary-name">
+          <b>Slack Secretary</b>
+          <InfoTip text={SECRETARY_ABOUT} label="About Slack Secretary" />
+        </span>
+        <input
+          type="checkbox"
+          role="switch"
+          className="switch slack-secretary-switch"
+          aria-label="Slack Secretary"
+          checked={on}
+          disabled={busy}
+          onChange={(e) => void set(e.target.checked)}
+        />
+      </div>
+      {on ? (
+        <p className="setting-line-text slack-secretary-line">
+          <span className={sec?.behind ? "slack-pulse" : "dot ok"} aria-hidden />
+          {sec?.behind
+            ? `Catching up on ${sec.behind} your Mac was off…`
+            : sec?.last_checked
+              ? `Checked ${ago(sec.last_checked, now)} · every 5 minutes, even when TodoCity is closed`
+              : "Starts its first check now · then every 5 minutes, even when TodoCity is closed"}
+        </p>
+      ) : (
+        <p className="setting-line-text muted slack-secretary-line">
+          Keep checking Slack every 5 minutes, even with TodoCity closed, across DMs, groups and your channels, with a priority on each task.
+        </p>
+      )}
+      {on && sec?.last_error && <p className="slack-detail">Last try: {sec.last_error} It tries again on its own.</p>}
+      {on && !!sec?.found && <p className="slack-detail">{sec.found === 1 ? "1 task found so far" : `${sec.found} tasks found so far`}</p>}
+      {err && <p className="rem-error">{err}</p>}
+    </div>
+  );
+}
+
 export const SLACK_PRIVACY =
   "Your agent reads Slack with its own Slack access, and what it reads goes to that agent's service, just as when you use it yourself. Only its read and search tools are used. The tasks stay in TodoCity on this Mac, and each Slack message becomes one task at most.";
 
@@ -124,7 +187,9 @@ export function SlackBody({ status, error }: { status: SlackStatus; error: strin
         </div>
       )}
 
-      {status.phase === "ready" && (
+      {status.phase === "ready" && <SecretaryRow status={status} />}
+
+      {status.phase === "ready" && !status.secretary?.on && (
         <>
           <div className="setting-line slack-state">
             <span className={status.scanning ? "slack-pulse" : "dot ok"} aria-hidden />
@@ -210,6 +275,19 @@ export function SlackSetupDialog({
   const phase = status?.phase ?? "checking";
   const name = plan.agent_name;
   const [busy, setBusy] = useState(false);
+  const [secBusy, setSecBusy] = useState(false);
+  const [secErr, setSecErr] = useState<string | null>(null);
+  const secretaryOn = async () => {
+    setSecErr(null);
+    setSecBusy(true);
+    try {
+      await api.slackSecretarySet(true);
+    } catch (e) {
+      setSecErr(String(e));
+    } finally {
+      setSecBusy(false);
+    }
+  };
   const again = async () => {
     setBusy(true);
     try {
@@ -235,6 +313,22 @@ export function SlackSetupDialog({
               Every 5 minutes, {name} looks at your DMs, group DMs and mentions, and anything that needs you lands in your Inbox. If your Mac sleeps, it catches up when it wakes.
             </p>
             {status && status.added > 0 && <p>Your most recent DM is already in your Inbox, so you can see how it looks.</p>}
+            {status && !status.secretary?.on && (
+              <div className="slack-offer">
+                <b>Turn on Slack Secretary?</b>
+                <p>{SECRETARY_ABOUT}</p>
+                <div className="rem-actions">
+                  <button type="button" className="primary small" disabled={secBusy} onClick={() => void secretaryOn()}>
+                    {secBusy ? "Turning on…" : "Turn on Slack Secretary"}
+                  </button>
+                  <button type="button" className="ghost small" onClick={onClose}>
+                    Not now
+                  </button>
+                </div>
+                {secErr && <p className="rem-error">{secErr}</p>}
+              </div>
+            )}
+            {status?.secretary?.on && <p className="slack-offer-on">✓ Slack Secretary is on: it checks Slack every 5 minutes, even when TodoCity is closed.</p>}
           </>
         ) : phase === "needs_slack" ? (
           <>

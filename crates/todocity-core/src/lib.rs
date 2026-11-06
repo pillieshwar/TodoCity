@@ -50,6 +50,7 @@ pub mod prompt;
 pub mod recurrence;
 pub mod reminders_sync;
 pub mod slack;
+pub mod slack_secretary;
 pub mod store;
 pub mod sync;
 pub mod things;

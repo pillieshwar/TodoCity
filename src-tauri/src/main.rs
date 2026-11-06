@@ -7,5 +7,10 @@ fn main() {
     if std::env::args().nth(1).as_deref() == Some("--mcp") {
         std::process::exit(todocity_lib::run_mcp());
     }
+    // `TodoCity --slack-secretary`: one Slack check by Slack Secretary's
+    // background task (launchd starts it every five minutes; no UI).
+    if std::env::args().nth(1).as_deref() == Some("--slack-secretary") {
+        std::process::exit(todocity_lib::run_slack_secretary());
+    }
     todocity_lib::run();
 }

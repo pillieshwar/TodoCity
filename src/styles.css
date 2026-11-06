@@ -866,6 +866,16 @@ button.small { border-radius: 7px; padding: 4px 10px; font-size: 12px; cursor: p
 .calendar-source { flex: none; font-size: 11px; color: var(--faint); }
 .connectors-foot { margin: 14px 2px 0; font-size: 11.5px; color: var(--faint); text-align: center; }
 .connector-icon.sync { color: var(--teal); }
+/* Slack Secretary: the background task's switch and status, and the offer after connecting. */
+.slack-secretary { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.slack-secretary.on { border-color: color-mix(in srgb, var(--teal) 40%, var(--line)); }
+.slack-secretary-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.slack-secretary-name { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.slack-secretary-line { margin: 0; display: flex; align-items: center; gap: 8px; line-height: 1.4; font-size: 12px; }
+.slack-secretary-line .dot, .slack-secretary-line .slack-pulse { flex: none; }
+.slack-offer { margin-top: 4px; padding: 12px; border-radius: 10px; background: var(--teal-soft); display: flex; flex-direction: column; gap: 6px; }
+.slack-offer p { margin: 0 !important; font-size: 12px !important; }
+.slack-offer-on { color: var(--teal) !important; font-weight: 600; }
 /* Slack connector: one switch in the card's head; its agent reads Slack. */
 .connector-icon.slack img { display: block; }
 .slack-switch { margin-left: 4px; }

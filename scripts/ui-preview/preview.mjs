@@ -363,6 +363,18 @@ function mockTauri(s) {
     slack_check_now: () => {
       window.__slackCheckNow = true;
     },
+    // v0.4.88: Slack Secretary (a background task that checks Slack).
+    slack_secretary_set: (a) => {
+      window.__secretary = a.on;
+      const view = { on: a.on, installed: a.on, last_checked: null, behind: null, last_error: null, found: 0 };
+      const cur = window.__slackStatus ?? s.slack;
+      if (cur) {
+        if (window.__slackStatus) window.__slackStatus = { ...cur, secretary: view };
+        else s.slack = { ...cur, secretary: view };
+      }
+      setTimeout(() => window.__emit?.("slack-changed", null), 0);
+      return view;
+    },
     // v0.4.80: Focus Blocks.
     focus_status: () => s.focus ?? null,
     focus_set: (a) => {
@@ -1578,6 +1590,42 @@ await shot("full-slack-ready", FULL, full({ settings: DARK }), async (p) => {
   }, SLACK_READY);
   await p.locator(".slack-dialog").getByText("Slack is connected").waitFor();
 }, true);
+// v0.4.88: Slack Secretary — offered once Slack connects; a background task checks Slack.
+await shot("full-slack-secretary-offer", FULL, full({ settings: LIGHT }), async (p) => {
+  await p.locator(".sidebar").getByRole("button", { name: /^Settings/ }).click();
+  await tab(p, "Connectors");
+  await p.locator(".slack-switch").click();
+  await p.locator(".slack-dialog").waitFor();
+  await p.evaluate((ready) => {
+    window.__slackStatus = { ...ready, secretary: { on: false, installed: false, last_checked: null, behind: null, last_error: null, found: 0 } };
+    window.__emit("slack-changed", null);
+  }, SLACK_READY);
+  await p.locator(".slack-offer").getByText("Turn on Slack Secretary?").waitFor();
+  await p.getByRole("button", { name: "Turn on Slack Secretary" }).click();
+  await p.waitForFunction(() => window.__secretary === true);
+  await p.locator(".slack-dialog").getByText(/Slack Secretary is on/).waitFor();
+});
+await shot(
+  "panel-connectors-slack-secretary",
+  PANEL,
+  scenario({ slack: { ...SLACK_READY, secretary: { on: true, installed: true, last_checked: localStamp(-1), behind: null, last_error: null, found: 5 } } }),
+  async (p) => {
+    await tab(p, "Connectors");
+    await p.locator(".slack-secretary.on").getByText(/even when TodoCity is closed/).waitFor();
+    if (!(await p.getByText(/^Slack Secretary · checked (just now|\d+ min ago)$/).count())) throw new Error("the card's line doesn't say Slack Secretary");
+    if (await p.getByRole("button", { name: "Check now" }).count()) throw new Error("the in-app check shows while the Secretary runs");
+  },
+);
+await shot(
+  "panel-connectors-slack-secretary-catching-up",
+  PANEL,
+  scenario({ slack: { ...SLACK_READY, secretary: { on: true, installed: true, last_checked: localStamp(-540), behind: "9 h", last_error: null, found: 0 } } }),
+  async (p) => {
+    await tab(p, "Connectors");
+    await p.getByText("Catching up on 9 h your Mac was off…").waitFor();
+  },
+  true,
+);
 // v0.4.66: the agent panel, and tasks sent to agents.
 const TODAY_OPEN = FULL_TASKS.filter((t) => t.due_date === day(0) && !t.done);
 const RUN_WORKING = FULL_TASKS.find((t) => t.title.startsWith("Wrap up the launch notes"));

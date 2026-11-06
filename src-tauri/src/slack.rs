@@ -54,12 +54,12 @@ impl SlackService {
         }
     }
 
-    fn get(&self) -> rules::State {
+    pub(crate) fn get(&self) -> rules::State {
         self.state.lock().map(|s| s.clone()).unwrap_or_default()
     }
 
     /// Change the state and save it.
-    fn update<T>(&self, f: impl FnOnce(&mut rules::State) -> T) -> T {
+    pub(crate) fn update<T>(&self, f: impl FnOnce(&mut rules::State) -> T) -> T {
         let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let out = f(&mut s);
         match serde_json::to_vec_pretty(&*s) {
@@ -83,7 +83,7 @@ impl SlackService {
     }
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
@@ -97,7 +97,7 @@ fn local_text(ms: i64) -> Option<String> {
 }
 
 /// "10:05" for a Unix ms, in local time.
-fn clock(ms: i64) -> String {
+pub(crate) fn clock(ms: i64) -> String {
     match Local.timestamp_millis_opt(ms) {
         chrono::LocalResult::Single(t) | chrono::LocalResult::Ambiguous(t, _) => {
             t.format("%-I:%M %p").to_string()
@@ -106,11 +106,11 @@ fn clock(ms: i64) -> String {
     }
 }
 
-fn changed(app: &AppHandle) {
+pub(crate) fn changed(app: &AppHandle) {
     let _ = app.emit("slack-changed", ());
 }
 
-fn agent_name(id: &str) -> String {
+pub(crate) fn agent_name(id: &str) -> String {
     agent_runs::cli(id)
         .map(|c| c.name.to_string())
         .unwrap_or_else(|| id.to_string())
@@ -156,6 +156,8 @@ pub struct SlackStatus {
     pub last_error: Option<String>,
     pub added: u64,
     pub activity: Vec<ActivityView>,
+    /// Slack Secretary: the background task that checks Slack.
+    pub secretary: crate::slack_secretary::SecretaryView,
 }
 
 fn status_of(s: &rules::State, scanning: bool) -> SlackStatus {
@@ -183,6 +185,7 @@ fn status_of(s: &rules::State, scanning: bool) -> SlackStatus {
         covered_until: (s.cursor_ms > 0).then(|| local_text(s.cursor_ms)).flatten(),
         last_error: s.last_error.clone(),
         added: s.added,
+        secretary: Default::default(),
         activity: s
             .log
             .iter()
@@ -198,8 +201,11 @@ fn status_of(s: &rules::State, scanning: bool) -> SlackStatus {
 }
 
 #[tauri::command]
-pub fn slack_status(service: State<'_, SlackService>) -> SlackStatus {
-    status_of(&service.get(), service.scanning.load(Ordering::SeqCst))
+pub fn slack_status(app: AppHandle, service: State<'_, SlackService>) -> SlackStatus {
+    let state = service.get();
+    let mut status = status_of(&state, service.scanning.load(Ordering::SeqCst));
+    status.secretary = crate::slack_secretary::view(&app, state.secretary);
+    status
 }
 
 /// The agents that can read Slack for TodoCity, and which are installed.
@@ -332,6 +338,7 @@ pub async fn slack_connect(app: AppHandle, agent: Option<String>) -> Result<Setu
 /// The toggle, off.
 #[tauri::command]
 pub fn slack_disconnect(app: AppHandle) {
+    crate::slack_secretary::uninstall();
     app.state::<SlackService>().update(|s| s.turn_off());
     log::info!("slack: turned off");
     crate::activity::log(&app, "slack", None, "info", "Slack is off");
@@ -426,6 +433,10 @@ pub fn on_check(app: &AppHandle, args: &Value) -> Result<Value, String> {
                 "Slack is connected".into(),
                 "Messages that need you will show up in your Inbox.".into(),
             );
+            // Slack Secretary on: its background task uses this agent now.
+            if service.get().secretary {
+                crate::slack_secretary::ensure(app);
+            }
             changed(app);
             service.nudge();
             Ok(json!({
@@ -450,7 +461,7 @@ fn added_elsewhere(app: &AppHandle, url: &str) -> bool {
 
 /// Add each item not added before (here, or on another Mac by its link) to
 /// the Inbox. Returns the titles added.
-fn add_items(app: &AppHandle, items: &[Item]) -> Vec<String> {
+pub(crate) fn add_items(app: &AppHandle, items: &[Item]) -> Vec<String> {
     let service = app.state::<SlackService>();
     let mut added = Vec::new();
     for item in items {
@@ -471,7 +482,13 @@ fn add_items(app: &AppHandle, items: &[Item]) -> Vec<String> {
             source_app: Some("Slack".into()),
             source_bundle: Some(SLACK_BUNDLE.into()),
             source_url: item.url.clone(),
-            notes: item.from.as_ref().map(|f| format!("From {f} in Slack")),
+            notes: match (&item.from, &item.place) {
+                (Some(f), Some(p)) => Some(format!("From {f} in Slack · {p}")),
+                (Some(f), None) => Some(format!("From {f} in Slack")),
+                (None, Some(p)) => Some(format!("From Slack · {p}")),
+                (None, None) => None,
+            },
+            priority: item.priority,
             // The Inbox, whatever mode the Mac is in.
             project: None,
             ..Default::default()
@@ -500,11 +517,18 @@ fn add_items(app: &AppHandle, items: &[Item]) -> Vec<String> {
 
 // ── Scanning ──────────────────────────────────────────────────────────────
 
-/// Ask the agent about one window; the checked answer.
-fn ask(agent: &str, tools: &[String], since: i64, until: i64) -> Result<rules::Scan, String> {
+/// Ask the agent about one window; the checked answer. Runs without the
+/// app too (Slack Secretary's background task).
+pub(crate) fn ask(
+    agent: &str,
+    tools: &[String],
+    since: i64,
+    until: i64,
+    reach: rules::Reach,
+) -> Result<rules::Scan, String> {
     let cli = agent_runs::cli(agent).ok_or("Pick an agent for Slack in Settings → Connectors.")?;
     let today = Local::now().date_naive();
-    let message = rules::scan_prompt(since, until, today);
+    let message = rules::scan_prompt(since, until, today, reach);
     let args = rules::scan_args(agent, &message, tools)
         .ok_or("Turn Slack off and on again in Settings → Connectors to set it up again.")?;
     let (program, argv) = crate::agent_panel::agent_argv(cli, &args);
@@ -552,7 +576,7 @@ fn scan_once(app: &AppHandle) -> bool {
             agent_name(&agent)
         ),
     );
-    let result = ask(&agent, &state.tools, since, until);
+    let result = ask(&agent, &state.tools, since, until, rules::Reach::Mentions);
     // Turned off (or set up again) meanwhile: drop the answer.
     let still = service.get();
     let current = still.enabled && still.phase == Phase::Ready && still.agent == state.agent;
@@ -632,6 +656,8 @@ pub fn start(app: &AppHandle) {
             }
             // Catching up runs scans back to back (each waits a moment).
             while scan_once(&app) {}
+            // What Slack Secretary's background task found.
+            crate::slack_secretary::import(&app);
             let _ = rx.recv_timeout(TICK);
         });
     if let Err(e) = spawned {

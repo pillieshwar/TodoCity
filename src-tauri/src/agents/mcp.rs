@@ -360,7 +360,7 @@ struct Socket;
 /// TodoCity's data folder: `TodoCity` on a Mac (or `app.pluck.desktop` until
 /// the app has moved it), Tauri's default elsewhere. This helper only looks;
 /// the app itself does the move.
-fn data_dir() -> Option<std::path::PathBuf> {
+pub(crate) fn data_dir() -> Option<std::path::PathBuf> {
     use todocity_core::data_folder;
     let home = std::path::PathBuf::from(std::env::var_os("HOME")?);
     if cfg!(target_os = "macos") {

@@ -41,6 +41,10 @@ describe("Slack connector text", () => {
     expect(slackLine(status({ phase: "needs_slack" }), NOW)).toBe("Connect Slack to Claude Code to finish.");
     expect(slackLine(status({ scanning: true }), NOW)).toContain("looking at Slack now");
     expect(slackLine(status({ last_checked: "2026-11-05T09:58:00" }), NOW)).toBe("Read by Claude Code · checked 2 min ago");
+    const sec = { on: true, installed: true, last_checked: "2026-11-05T09:57:00", behind: null, last_error: null, found: 2 };
+    expect(slackLine(status({ secretary: sec }), NOW)).toBe("Slack Secretary · checked 3 min ago");
+    expect(slackLine(status({ secretary: { ...sec, behind: "9 h 20 min" } }), NOW)).toBe("Slack Secretary is catching up on 9 h 20 min…");
+    expect(slackLine(status({ secretary: { ...sec, last_checked: null } }), NOW)).toBe("Slack Secretary checks every 5 minutes");
   });
 
   it("gives steps for the agent in use", () => {

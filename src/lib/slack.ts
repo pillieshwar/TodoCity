@@ -42,6 +42,11 @@ export function slackLine(s: SlackStatus | null, now: Date): string {
     case "stalled":
       return "Check again to finish setting up.";
     case "ready": {
+      if (s.secretary?.on) {
+        if (s.secretary.behind) return `Slack Secretary is catching up on ${s.secretary.behind}…`;
+        const at = ago(s.secretary.last_checked, now);
+        return at ? `Slack Secretary · checked ${at}` : "Slack Secretary checks every 5 minutes";
+      }
       if (s.scanning) return `${who} is looking at Slack now…`;
       const last = ago(s.last_checked, now);
       return last ? `Read by ${who} · checked ${last}` : `Read by ${who}`;

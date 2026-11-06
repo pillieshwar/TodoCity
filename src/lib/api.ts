@@ -21,6 +21,7 @@ import type {
   SlackAgent,
   SlackSetupPlan,
   SlackStatus,
+  SlackSecretary,
   FocusStatus,
   AgentChange,
   AgentCliStatus,
@@ -139,6 +140,8 @@ export const api = {
   slackConnect: (agent?: string | null) => invoke<SlackSetupPlan>("slack_connect", { agent: agent ?? null }),
   slackDisconnect: () => invoke<void>("slack_disconnect"),
   slackCheckNow: () => invoke<void>("slack_check_now"),
+  /** Turn Slack Secretary (the background task) on or off. */
+  slackSecretarySet: (on: boolean) => invoke<SlackSecretary>("slack_secretary_set", { on }),
   focusStatus: () => invoke<FocusStatus>("focus_status"),
   focusSet: (change: { enabled?: boolean; calendar?: string; shortcut?: string; minutes?: number }) =>
     invoke<FocusStatus>("focus_set", {

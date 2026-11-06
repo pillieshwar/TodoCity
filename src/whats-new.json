@@ -1,4 +1,10 @@
 {
+  "0.4.88": [
+    "Slack Secretary: once Slack is connected, turn it on and a background task checks Slack every 5 minutes, even when TodoCity is closed",
+    "If your Mac was off or asleep, it catches up on those hours, so nothing is missed",
+    "It looks at your DMs, group DMs and the channels you're in, and gives every task from Slack a priority: urgent, high or medium",
+    "What it finds lands in your Inbox, with where it came from, like \"#launch\" or \"DM with Sam\""
+  ],
   "0.4.87": [
     "Settings → Agents shows every agent on your Mac as a card, including ones installed with nvm, asdf or mise. Check for agents looks again; Add agent… lets you pick one yourself",
     "Connect opens the agent beside your tasks and connects it there, so you can see what it's doing and type to it if it needs a hand",

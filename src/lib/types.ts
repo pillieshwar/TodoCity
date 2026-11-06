@@ -533,6 +533,20 @@ export interface SlackStatus {
   last_error: string | null;
   added: number;
   activity: SlackActivity[];
+  /** Slack Secretary: a background task that checks Slack, TodoCity open or not. */
+  secretary?: SlackSecretary;
+}
+
+/** Mirrors `slack_secretary::SecretaryView`. */
+export interface SlackSecretary {
+  on: boolean;
+  /** Its background task is in place. */
+  installed: boolean;
+  last_checked: string | null;
+  /** "9 h 20 min" while it catches up on time the Mac was off. */
+  behind: string | null;
+  last_error: string | null;
+  found: number;
 }
 
 export interface SlackActivity {

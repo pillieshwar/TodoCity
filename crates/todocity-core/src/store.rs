@@ -456,6 +456,8 @@ ALTER TABLE projects ADD COLUMN plan_end TEXT;
     r#"
 ALTER TABLE floors ADD COLUMN plan_start TEXT;
 ALTER TABLE floors ADD COLUMN plan_end TEXT;
+-- A section changed in place (its span) is something to send, too.
+CREATE TRIGGER sync_dirty_floor_upd AFTER UPDATE ON floors BEGIN UPDATE sync_state SET value = CAST(value AS INTEGER) + 1 WHERE key = 'dirty'; END;
 "#,
 ];
 

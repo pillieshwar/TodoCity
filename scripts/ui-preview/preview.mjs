@@ -528,7 +528,17 @@ function mockTauri(s) {
       return t;
     },
     city_windows: () => s.cityWindows ?? [],
-    list_floors: () => s.floors ?? [],
+    list_floors: () =>
+      (s.floors ?? []).map((f) => {
+        const plan = (s.floorPlans ?? {})[`${f.project}/${f.name}`] ?? null;
+        return { ...f, plan_start: plan?.[0] ?? null, plan_end: plan?.[1] ?? null };
+      }),
+    set_floor_plan: (a) => {
+      s.floorPlans = { ...(s.floorPlans ?? {}), [`${a.project}/${a.name}`]: a.start && a.end ? [a.start, a.end] : null };
+      (window.__floorPlans ??= []).push({ project: a.project, name: a.name, start: a.start, end: a.end });
+      setTimeout(() => window.__emit?.("tasks-changed", null), 0);
+      return true;
+    },
     create_project: (a) => a.name,
     project_tasks: (a) => [...s.tasks, ...(s.logbook ?? [])].filter((t) => t.project === a.project),
     delete_project: () => true,
@@ -2439,6 +2449,61 @@ await shot("full-timeline-color", FULL, timelineOf(), async (p) => {
   await menu.waitFor();
   await menu.getByRole("radio", { name: "Pink" }).click();
   await p.waitForFunction(() => (window.__colored ?? []).some((c) => c.name === "Q4 launch" && c.color === "#e463a6"));
+});
+// v0.4.90: sections get their own bars, picked with the + beside a project; none by default.
+const SECTIONS = [
+  { project: "Q4 launch", name: "Design", open: 2, done: 1 },
+  { project: "Q4 launch", name: "Build", open: 3, done: 0 },
+  { project: "Q4 launch", name: "Launch day", open: 1, done: 0 },
+];
+const sectionsOf = (o = {}) => timelineOf({ floors: SECTIONS, ...o });
+const lastFloorPlan = (p, name) => p.evaluate((n) => (window.__floorPlans ?? []).filter((x) => x.name === n).pop(), name);
+await shot("full-timeline-sections-hidden", FULL, sectionsOf(), async (p) => {
+  await side(/^Timeline/)(p);
+  await bar(p, "Q4 launch").waitFor();
+  if (await p.locator(".tl-row.section").count()) throw new Error("sections show before anyone picked them");
+});
+await shot("full-timeline-section-add", FULL, sectionsOf(), async (p) => {
+  await side(/^Timeline/)(p);
+  const row = p.locator(".tl-family", { hasText: "Q4 launch" }).locator(".tl-row").first();
+  await row.hover();
+  await row.getByRole("button", { name: "Sections of Q4 launch on the timeline" }).click();
+  const pick = p.getByRole("dialog", { name: "Sections of Q4 launch" });
+  await pick.waitFor();
+  for (const n of ["Design", "Build", "Launch day"]) await pick.getByRole("checkbox", { name: n }).waitFor();
+  await pick.getByRole("checkbox", { name: "Design" }).check();
+  await pick.getByRole("checkbox", { name: "Build" }).check();
+  await p.waitForTimeout(300);
+  const fp = await lastFloorPlan(p, "Design");
+  if (!fp || fp.project !== "Q4 launch" || fp.start !== PLANS["Q4 launch"][0] || fp.end !== PLANS["Q4 launch"][1]) throw new Error(`a new section bar should start as its project's span: ${JSON.stringify(fp)}`);
+  await p.keyboard.press("Escape");
+  await p.locator('.tl-item[data-section="Design"]').waitFor();
+  if ((await p.locator(".tl-row.section").count()) !== 2) throw new Error("only the picked sections should show");
+  // Under their project.
+  const proj = await bar(p, "Q4 launch").boundingBox();
+  const sec = await p.locator('.tl-item[data-section="Design"]').boundingBox();
+  if (sec.y < proj.y || sec.height >= proj.height) throw new Error("a section bar should sit under its project, and be slimmer");
+  if (!(await row.locator(".tl-add-count", { hasText: "2" }).count())) throw new Error("the + doesn't show how many sections are on");
+});
+await shot("full-timeline-section-move-remove", FULL, sectionsOf({ floorPlans: { "Q4 launch/Build": [day(10), day(30)] } }), async (p) => {
+  await side(/^Timeline/)(p);
+  const b = p.locator('.tl-item[data-section="Build"]');
+  await b.waitFor();
+  const lane = await p.locator(".tl-months").boundingBox();
+  await dragBy(p, b, (lane.width / 365) * 7);
+  await p.mouse.up();
+  await p.waitForTimeout(250);
+  const fp = await lastFloorPlan(p, "Build");
+  if (!fp || Math.abs(daysBetween(day(10), fp.start) - 7) > 1 || daysBetween(fp.start, fp.end) !== 20) throw new Error(`moving a section bar: ${JSON.stringify(fp)}`);
+  // Take it off again from the +.
+  const row = p.locator(".tl-family", { hasText: "Q4 launch" }).locator(".tl-row").first();
+  await row.getByRole("button", { name: "Sections of Q4 launch on the timeline" }).click();
+  await p.getByRole("dialog", { name: "Sections of Q4 launch" }).getByRole("checkbox", { name: "Build" }).uncheck();
+  await p.waitForTimeout(300);
+  const off = await lastFloorPlan(p, "Build");
+  if (off.start !== null || off.end !== null) throw new Error("unticking didn't take the section off");
+  await p.keyboard.press("Escape");
+  if (await p.locator(".tl-row.section").count()) throw new Error("the section bar stayed");
 });
 // v0.4.85: one project open at a time in the sidebar.
 await shot("full-sidebar-one-open", FULL, full({ settings: LIGHT }), async (p) => {

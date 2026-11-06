@@ -280,7 +280,9 @@ impl Store {
             f.insert("deleted".into(), Value::Bool(false));
             out.insert(format!("p:{name}"), f);
         }
-        let mut stmt = self.conn.prepare("SELECT project, name FROM floors")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT project, name, plan_start, plan_end FROM floors")?;
         let mut rows = stmt.query([])?;
         while let Some(r) = rows.next()? {
             let (project, name): (String, String) = (r.get(0)?, r.get(1)?);
@@ -288,6 +290,8 @@ impl Store {
                 continue;
             }
             let mut f = Fields::new();
+            f.insert("plan_start".into(), to_json(r.get_ref(2)?));
+            f.insert("plan_end".into(), to_json(r.get_ref(3)?));
             f.insert("deleted".into(), Value::Bool(false));
             out.insert(format!("f:{project}{UNIT}{name}"), f);
         }
@@ -496,7 +500,7 @@ impl Store {
                 write_project(&tx, name, &fields, deleted)
             } else if let Some(rest) = entity.strip_prefix("f:") {
                 match rest.split_once(UNIT) {
-                    Some((p, n)) => write_floor(&tx, p, n, deleted),
+                    Some((p, n)) => write_floor(&tx, p, n, &fields, deleted),
                     None => Ok(false),
                 }
             } else {
@@ -693,6 +697,7 @@ fn write_floor(
     tx: &rusqlite::Transaction<'_>,
     project: &str,
     name: &str,
+    fields: &Fields,
     deleted: bool,
 ) -> Result<bool, rusqlite::Error> {
     if deleted {
@@ -701,14 +706,28 @@ fn write_floor(
             params![project, name],
         )? > 0);
     }
-    Ok(tx.execute(
+    let added = tx.execute(
         "INSERT OR IGNORE INTO floors (project, name, created_at) VALUES (?1, ?2, ?3)",
         params![
             project,
             name,
             chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
         ],
-    )? > 0)
+    )?;
+    // The section's Timeline span; a Mac too old to know it sends no such
+    // field, and then the span here stays as it is.
+    let mut planned = 0;
+    for col in ["plan_start", "plan_end"] {
+        if let Some(v) = fields.get(col) {
+            planned += tx.execute(
+                &format!(
+                    "UPDATE floors SET {col} = ?3 WHERE project = ?1 AND name = ?2 AND {col} IS NOT ?3"
+                ),
+                params![project, name, to_sql(v)],
+            )?;
+        }
+    }
+    Ok(added + planned > 0)
 }
 
 #[cfg(test)]
@@ -955,6 +974,37 @@ mod tests {
         a.set_project_plan("Launch", None).unwrap();
         send(&a, "A", &b, "B");
         assert_eq!(p(&b), (None, None, Some("#f6c1d0".into())));
+        // Nothing echoes back.
+        assert_eq!(b.sync_collect("B", "B", &none()).unwrap(), 0);
+    }
+
+    #[test]
+    fn section_timelines_travel_and_follow_the_section() {
+        let a = Store::open_in_memory().unwrap();
+        let b = Store::open_in_memory().unwrap();
+        a.set_floor_plan("Launch", "Design", Some(("2026-11-02", "2026-11-27")))
+            .unwrap();
+        send(&a, "A", &b, "B");
+        let span = |s: &Store, n: &str| {
+            s.floors()
+                .unwrap()
+                .into_iter()
+                .find(|f| f.project == "Launch" && f.name == n)
+                .map(|f| (f.plan_start, f.plan_end))
+        };
+        assert_eq!(
+            span(&b, "Design"),
+            Some((Some("2026-11-02".into()), Some("2026-11-27".into())))
+        );
+        // Stretched on B: A follows.
+        b.set_floor_plan("Launch", "Design", Some(("2026-11-02", "2026-12-18")))
+            .unwrap();
+        send(&b, "B", &a, "A");
+        assert_eq!(span(&a, "Design").unwrap().1.as_deref(), Some("2026-12-18"));
+        // Taken off on A: off on B, and the section stays.
+        a.set_floor_plan("Launch", "Design", None).unwrap();
+        send(&a, "A", &b, "B");
+        assert_eq!(span(&b, "Design"), Some((None, None)));
         // Nothing echoes back.
         assert_eq!(b.sync_collect("B", "B", &none()).unwrap(), 0);
     }

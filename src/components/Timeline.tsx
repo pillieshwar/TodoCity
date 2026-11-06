@@ -16,7 +16,7 @@ import {
   type Span,
   type ZoomId,
 } from "../lib/timeline";
-import type { ProjectSummary } from "../lib/types";
+import type { FloorSummary, ProjectSummary } from "../lib/types";
 import { LineIcon } from "./LineIcon";
 
 const LEFT_W = 260;
@@ -32,9 +32,24 @@ const saved = <T extends string>(key: string, ok: readonly T[], d: T): T => {
   }
 };
 
+// `name` is an item's key: a project's name, or "<project>␟<section>".
 type Drag =
   | { kind: "bar"; name: string; mode: "move" | "start" | "end"; x0: number; base: Span; by: number; moved: boolean }
   | { kind: "draw"; name: string; a: number; b: number; x0: number; moved: boolean };
+
+const SEP = "\u001f";
+/** A row on the Timeline: a project, or one of its sections given its own bar. */
+interface Item {
+  key: string;
+  project: string;
+  section: string | null;
+  color: string | null;
+  open: number;
+  done: number;
+  saved: Span | null;
+}
+const savedSpan = (x: { plan_start?: string | null; plan_end?: string | null }): Span | null =>
+  x.plan_start && x.plan_end ? { start: x.plan_start, end: x.plan_end } : null;
 
 /** A small ring for how much of a project is done. */
 function Ring({ done, total }: { done: number; total: number }) {
@@ -57,17 +72,22 @@ function Ring({ done, total }: { done: number; total: number }) {
  */
 export function Timeline({
   projects,
+  sections = [],
   today,
   locale,
   onOpen,
   onPlan,
+  onPlanSection,
   onColor,
 }: {
   projects: ProjectSummary[];
+  /** Every section, to pick from; those with a span get their own bar under their project. */
+  sections?: FloorSummary[];
   today: string;
   locale: string;
   onOpen: (name: string) => void;
   onPlan: (name: string, span: Span | null) => Promise<void>;
+  onPlanSection: (project: string, section: string, span: Span | null) => Promise<void>;
   onColor: (name: string, color: string | null) => void;
 }) {
   const [zoom, setZoomRaw] = useState<ZoomId>(() => saved(ZOOM_KEY, ZOOMS.map((z) => z.id), "year"));
@@ -157,32 +177,49 @@ export function Timeline({
     return () => el.removeEventListener("wheel", wheel);
   }, [ppd]);
 
+  // Every row: projects, and the sections given their own bars.
+  const items = useMemo(() => {
+    const out = new Map<string, Item>();
+    for (const p of projects) out.set(p.name, { key: p.name, project: p.name, section: null, color: p.color ?? null, open: p.open, done: p.done, saved: savedSpan(p) });
+    for (const f of sections) {
+      const key = `${f.project}${SEP}${f.name}`;
+      out.set(key, { key, project: f.project, section: f.name, color: out.get(f.project)?.color ?? null, open: f.open, done: f.done, saved: savedSpan(f) });
+    }
+    return out;
+  }, [projects, sections]);
+
   // Changes shown at once, before the saved ones come back.
   const [pending, setPending] = useState<Map<string, Span | null>>(new Map());
   useEffect(() => {
     setPending((m) => {
       if (!m.size) return m;
       const n = new Map(m);
-      for (const [name, s] of m) {
-        const p = projects.find((x) => x.name === name);
-        const now = p?.plan_start && p.plan_end ? { start: p.plan_start, end: p.plan_end } : null;
-        if (!p || (now?.start === s?.start && now?.end === s?.end)) n.delete(name);
+      for (const [key, s] of m) {
+        const it = items.get(key);
+        const now = it?.saved ?? null;
+        if (!it || (now?.start === s?.start && now?.end === s?.end)) n.delete(key);
       }
-      return n;
+      return n.size === m.size ? m : n;
     });
-  }, [projects]);
-  const plan = (name: string, s: Span | null) => {
-    setPending((m) => new Map(m).set(name, s));
-    void onPlan(name, s).catch(() =>
+  }, [items]);
+  const plan = (key: string, s: Span | null) => {
+    const it = items.get(key);
+    if (!it) return;
+    setPending((m) => new Map(m).set(key, s));
+    const saving = it.section === null ? onPlan(it.project, s) : onPlanSection(it.project, it.section, s);
+    void saving.catch(() =>
       setPending((m) => {
         const n = new Map(m);
-        n.delete(name);
+        n.delete(key);
         return n;
       }),
     );
   };
-  const spanOf = (p: ProjectSummary): Span | null =>
-    pending.has(p.name) ? pending.get(p.name)! : p.plan_start && p.plan_end ? { start: p.plan_start, end: p.plan_end } : null;
+  const spanOf = (it: Item): Span | null => (pending.has(it.key) ? pending.get(it.key)! : it.saved);
+  const openItem = (key: string) => {
+    const it = items.get(key);
+    if (it) onOpen(it.project);
+  };
 
   // Dragging a bar, or drawing a new one across an empty row.
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -208,7 +245,7 @@ export function Timeline({
       setDrag(null);
       if (!d) return;
       if (d.kind === "bar") {
-        if (!d.moved) onOpen(d.name);
+        if (!d.moved) openItem(d.name);
         else if (d.by) plan(d.name, dragSpan(d.base, d.mode, d.by));
       } else plan(d.name, d.moved ? drawnSpan(d.a, d.b) : clickSpan(d.a));
     };
@@ -230,7 +267,8 @@ export function Timeline({
   const dayAt = (clientX: number, lane: HTMLElement) => Math.floor(from + (clientX - lane.getBoundingClientRect().left) / ppd);
 
   // Right-click (or the color dot): color, open, take off the Timeline.
-  const [menu, setMenu] = useState<{ name: string; x: number; y: number } | null>(null);
+  // The + beside a project: which of its sections get their own bars.
+  const [menu, setMenu] = useState<{ name: string; x: number; y: number; kind: "item" | "sections" } | null>(null);
   useEffect(() => {
     if (!menu) return;
     const away = (e: PointerEvent) => !(e.target as HTMLElement).closest(".tl-menu") && setMenu(null);
@@ -242,9 +280,26 @@ export function Timeline({
       document.removeEventListener("keydown", key);
     };
   }, [menu]);
+  const menuAt = (el: Element, name: string, kind: "item" | "sections") => {
+    const r = el.getBoundingClientRect();
+    setMenu({ name, x: r.left, y: r.bottom + 6, kind });
+  };
 
-  const planned = projects.filter((p) => spanOf(p)).sort((a, b) => spanOf(a)!.start.localeCompare(spanOf(b)!.start) || a.name.localeCompare(b.name));
-  const unplanned = projects.filter((p) => !spanOf(p)).sort((a, b) => a.name.localeCompare(b.name));
+  // A project's sections, and those on the Timeline (by when they start).
+  const sectionsOf = (project: string) => sections.filter((f) => f.project === project).map((f) => items.get(`${f.project}${SEP}${f.name}`)!);
+  const shownSections = (project: string) =>
+    sectionsOf(project)
+      .filter((it) => spanOf(it))
+      .sort((a, b) => spanOf(a)!.start.localeCompare(spanOf(b)!.start) || a.section!.localeCompare(b.section!));
+  /** Where a section's bar starts when it's first added: its project's span, or four weeks from today. */
+  const firstSpan = (project: string): Span => {
+    const p = items.get(project);
+    return (p && spanOf(p)) ?? clickSpan(Math.max(dayNum(today), Math.floor(from)));
+  };
+
+  const projectItems = projects.map((p) => items.get(p.name)!);
+  const planned = projectItems.filter((p) => spanOf(p)).sort((a, b) => spanOf(a)!.start.localeCompare(spanOf(b)!.start) || a.project.localeCompare(b.project));
+  const unplanned = projectItems.filter((p) => !spanOf(p)).sort((a, b) => a.project.localeCompare(b.project));
   const groups = [
     { id: "planned", label: "On the timeline", items: planned },
     { id: "unplanned", label: "Not planned yet", items: unplanned },
@@ -255,56 +310,58 @@ export function Timeline({
   const x = (n: number) => (n - from) * ppd;
   const monthFmt = useMemo(() => new Intl.DateTimeFormat(locale, { month: "short" }), [locale]);
 
-  const bar = (p: ProjectSummary) => {
-    const base = spanOf(p);
-    const live = drag?.kind === "bar" && drag.name === p.name ? dragSpan(drag.base, drag.mode, drag.by) : drag?.kind === "draw" && drag.name === p.name && drag.moved ? drawnSpan(drag.a, drag.b) : base;
+  const bar = (it: Item) => {
+    const base = spanOf(it);
+    const label = it.section ?? it.project;
+    const live = drag?.kind === "bar" && drag.name === it.key ? dragSpan(drag.base, drag.mode, drag.by) : drag?.kind === "draw" && drag.name === it.key && drag.moved ? drawnSpan(drag.a, drag.b) : base;
     if (!live) return null;
     const at = barPlace(live, from, days, width);
     if (!at.visible) {
       // Off to one side: an arrow that brings it into view.
       const after = dayNum(live.start) >= from + days;
       return (
-        <button type="button" className={after ? "tl-off after" : "tl-off before"} style={{ "--fill": p.color ?? undefined } as CSSProperties} onClick={() => goTo(dayNum(live.start) - Math.round(days / 6))} title={`${p.name}: ${spanLabel(live, today, locale)}`}>
+        <button type="button" className={after ? "tl-off after pastel" : "tl-off before pastel"} style={{ "--fill": it.color ?? undefined } as CSSProperties} onClick={() => goTo(dayNum(live.start) - Math.round(days / 6))} title={`${label}: ${spanLabel(live, today, locale)}`}>
           {after ? "›" : "‹"}
         </button>
       );
     }
-    const dragging = drag?.name === p.name && (drag.kind === "draw" || drag.moved);
-    const narrow = at.width < 120;
+    const dragging = drag?.name === it.key && (drag.kind === "draw" || drag.moved);
+    const narrow = at.width < (it.section ? 100 : 120);
     const start = (mode: "move" | "start" | "end") => (e: ReactPointerEvent) => {
       if (e.button !== 0 || !base) return;
       e.preventDefault();
       e.stopPropagation();
       cancelAnimationFrame(glide.current);
       setMenu(null);
-      setDrag({ kind: "bar", name: p.name, mode, x0: e.clientX, base, by: 0, moved: false });
+      setDrag({ kind: "bar", name: it.key, mode, x0: e.clientX, base, by: 0, moved: false });
     };
     return (
       <div
-        className={["tl-item pastel", at.cutStart ? "cut-start" : "", at.cutEnd ? "cut-end" : "", narrow ? "narrow" : "", dragging ? "dragging" : ""].filter(Boolean).join(" ")}
-        style={{ left: at.left, width: Math.max(at.width, 6), "--fill": p.color ?? undefined } as CSSProperties}
-        data-project={p.name}
+        className={["tl-item pastel", it.section !== null ? "section" : "", at.cutStart ? "cut-start" : "", at.cutEnd ? "cut-end" : "", narrow ? "narrow" : "", dragging ? "dragging" : ""].filter(Boolean).join(" ")}
+        style={{ left: at.left, width: Math.max(at.width, 6), "--fill": it.color ?? undefined } as CSSProperties}
+        data-project={it.section === null ? it.project : undefined}
+        data-section={it.section ?? undefined}
         role="button"
         tabIndex={0}
-        aria-label={`${p.name}, ${spanLabel(live, today, locale)}. Enter opens it; arrows move it, Option-arrows change its end.`}
+        aria-label={`${it.section ? `${it.project}: ${it.section}` : it.project}, ${spanLabel(live, today, locale)}. Enter opens it; arrows move it, Option-arrows change its end.`}
         onPointerDown={start("move")}
         onContextMenu={(e) => {
           e.preventDefault();
-          setMenu({ name: p.name, x: e.clientX, y: e.clientY });
+          setMenu({ name: it.key, x: e.clientX, y: e.clientY, kind: "item" });
         }}
         onKeyDown={(e) => {
-          if (e.key === "Enter") onOpen(p.name);
+          if (e.key === "Enter") openItem(it.key);
           if (base && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
             e.preventDefault();
             const by = (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 7 : 1);
-            plan(p.name, dragSpan(base, e.altKey ? "end" : "move", by));
+            plan(it.key, dragSpan(base, e.altKey ? "end" : "move", by));
           }
         }}
       >
         <span className="tl-grip start" onPointerDown={start("start")} aria-hidden />
         <span className="tl-label">
-          <Ring done={p.done} total={p.open + p.done} />
-          <span className="tl-name">{p.name}</span>
+          <Ring done={it.done} total={it.open + it.done} />
+          <span className="tl-name">{label}</span>
         </span>
         <span className="tl-grip end" onPointerDown={start("end")} aria-hidden />
         {dragging && (
@@ -316,51 +373,74 @@ export function Timeline({
     );
   };
 
-  const row = (p: ProjectSummary) => {
-    const s = spanOf(p);
-    const late = !!s && s.end < today && p.open > 0;
+  const due = (it: Item, s: Span) => {
+    const late = s.end < today && it.open > 0;
     return (
-      <div className={s ? "tl-row" : "tl-row unplanned"} key={p.name}>
+      <span className={late ? "tl-due late" : "tl-due"} title={`Ends ${spanLabel({ start: s.end, end: s.end }, today, locale)}`}>
+        <LineIcon name={late ? "flagFilled" : "flag"} size={13} />
+        {fromToday(s.end, today)}
+      </span>
+    );
+  };
+
+  const sectionRow = (it: Item) => {
+    const s = spanOf(it)!;
+    return (
+      <div className="tl-row section" key={it.key}>
         <div className="tl-left">
-          <button
-            type="button"
-            className="tl-dot pastel"
-            style={{ "--fill": p.color ?? undefined } as CSSProperties}
-            aria-label={`${p.name}'s color`}
-            title="Color"
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              setMenu({ name: p.name, x: r.left, y: r.bottom + 6 });
-            }}
-          />
-          <button type="button" className="tl-open" onClick={() => onOpen(p.name)} title={`Open ${p.name}`}>
-            {p.name}
+          <span className="tl-branch pastel" style={{ "--fill": it.color ?? undefined } as CSSProperties} aria-hidden />
+          <button type="button" className="tl-open" onClick={() => onOpen(it.project)} title={`Open ${it.project}`}>
+            {it.section}
           </button>
-          {s ? (
-            <span className={late ? "tl-due late" : "tl-due"} title={`Ends ${spanLabel({ start: s.end, end: s.end }, today, locale)}`}>
-              <LineIcon name={late ? "flagFilled" : "flag"} size={13} />
-              {fromToday(s.end, today)}
-            </span>
-          ) : (
-            <span className="tl-due hint">Drag to plan</span>
-          )}
+          {due(it, s)}
         </div>
-        <div
-          className="tl-lane"
-          onPointerDown={(e) => {
-            if (e.button !== 0 || s || e.target !== e.currentTarget) return;
-            e.preventDefault();
-            const a = dayAt(e.clientX, e.currentTarget);
-            setDrag({ kind: "draw", name: p.name, a, b: a, x0: e.clientX, moved: false });
-          }}
-        >
-          {bar(p)}
-        </div>
+        <div className="tl-lane">{bar(it)}</div>
       </div>
     );
   };
 
-  const menuFor = menu ? projects.find((p) => p.name === menu.name) : null;
+  const row = (it: Item) => {
+    const s = spanOf(it);
+    const subs = shownSections(it.project);
+    const picked = subs.length;
+    return (
+      <div className="tl-family" key={it.key}>
+        <div className={s ? "tl-row" : "tl-row unplanned"}>
+          <div className="tl-left">
+            <button type="button" className="tl-dot pastel" style={{ "--fill": it.color ?? undefined } as CSSProperties} aria-label={`${it.project}'s color`} title="Color" onClick={(e) => menuAt(e.currentTarget, it.key, "item")} />
+            <button type="button" className="tl-open" onClick={() => onOpen(it.project)} title={`Open ${it.project}`}>
+              {it.project}
+            </button>
+            <button
+              type="button"
+              className={picked ? "tl-add has" : "tl-add"}
+              aria-label={`Sections of ${it.project} on the timeline`}
+              title="Add sections to the timeline"
+              onClick={(e) => menuAt(e.currentTarget, it.key, "sections")}
+            >
+              {picked ? <span className="tl-add-count">{picked}</span> : <LineIcon name="plus" size={13} />}
+            </button>
+            {s ? due(it, s) : <span className="tl-due hint">Drag to plan</span>}
+          </div>
+          <div
+            className="tl-lane"
+            onPointerDown={(e) => {
+              if (e.button !== 0 || s || e.target !== e.currentTarget) return;
+              e.preventDefault();
+              const a = dayAt(e.clientX, e.currentTarget);
+              setDrag({ kind: "draw", name: it.key, a, b: a, x0: e.clientX, moved: false });
+            }}
+          >
+            {bar(it)}
+          </div>
+        </div>
+        {subs.map(sectionRow)}
+      </div>
+    );
+  };
+
+  const menuFor = menu ? items.get(menu.name) : null;
+  const menuStyle = menu ? { left: Math.min(menu.x, window.innerWidth - 250), top: Math.min(menu.y, window.innerHeight - 260) } : undefined;
   return (
     <div className={drag ? "timeline dragging" : "timeline"}>
       <div className="tl-toolbar">
@@ -382,7 +462,7 @@ export function Timeline({
             ›
           </button>
         </div>
-        <span className="tl-help">Drag a bar to move it, its ends to stretch it. Click to open.</span>
+        <span className="tl-help">Drag a bar to move it, its ends to stretch it. Click to open. + adds sections.</span>
       </div>
       <div className="tl-body" ref={bodyRef}>
         <div className="tl-head">
@@ -430,43 +510,78 @@ export function Timeline({
           })}
         </div>
       </div>
-      {menu && menuFor && (
-        <div className="tl-menu" role="menu" style={{ left: Math.min(menu.x, window.innerWidth - 230), top: Math.min(menu.y, window.innerHeight - 200) }}>
-          <p className="tl-menu-label">Color</p>
-          <div className="tl-swatches" role="radiogroup" aria-label={`${menu.name}'s color`}>
-            <button type="button" role="radio" aria-checked={!menuFor.color} aria-label="Default color" className={!menuFor.color ? "tl-swatch pastel on" : "tl-swatch pastel"} onClick={() => onColor(menu.name, null)} />
-            {PROJECT_COLORS.map(([c, label]) => (
-              <button
-                key={c}
-                type="button"
-                role="radio"
-                aria-checked={menuFor.color === c}
-                aria-label={label}
-                title={label}
-                className={menuFor.color === c ? "tl-swatch pastel on" : "tl-swatch pastel"}
-                style={{ "--fill": c } as CSSProperties}
-                onClick={() => onColor(menu.name, c)}
-              />
-            ))}
-          </div>
-          <button type="button" role="menuitem" onClick={() => {
+      {menu && menuFor && menu.kind === "sections" && (
+        <div className="tl-menu tl-sections" role="dialog" aria-label={`Sections of ${menuFor.project}`} style={menuStyle}>
+          <p className="tl-menu-label">Sections on the timeline</p>
+          {sectionsOf(menuFor.project).length ? (
+            sectionsOf(menuFor.project).map((f) => {
+              const on = !!spanOf(f);
+              return (
+                <label key={f.key} className="tl-check">
+                  <input type="checkbox" checked={on} onChange={() => plan(f.key, on ? null : firstSpan(f.project))} />
+                  <span className="tl-check-name">{f.section}</span>
+                  {on && <span className="tl-check-span">{spanLabel(spanOf(f)!, today, locale)}</span>}
+                </label>
+              );
+            })
+          ) : (
+            <p className="tl-menu-note">Sections you add to {menuFor.project} show up here, ready to plan.</p>
+          )}
+        </div>
+      )}
+      {menu && menuFor && menu.kind === "item" && (
+        <div className="tl-menu" role="menu" style={menuStyle}>
+          {menuFor.section === null && (
+            <>
+              <p className="tl-menu-label">Color</p>
+              <div className="tl-swatches" role="radiogroup" aria-label={`${menuFor.project}'s color`}>
+                <button type="button" role="radio" aria-checked={!menuFor.color} aria-label="Default color" className={!menuFor.color ? "tl-swatch pastel on" : "tl-swatch pastel"} onClick={() => onColor(menuFor.project, null)} />
+                {PROJECT_COLORS.map(([c, label]) => (
+                  <button
+                    key={c}
+                    type="button"
+                    role="radio"
+                    aria-checked={menuFor.color === c}
+                    aria-label={label}
+                    title={label}
+                    className={menuFor.color === c ? "tl-swatch pastel on" : "tl-swatch pastel"}
+                    style={{ "--fill": c } as CSSProperties}
+                    onClick={() => onColor(menuFor.project, c)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
               setMenu(null);
-              onOpen(menu.name);
-            }}>
+              onOpen(menuFor.project);
+            }}
+          >
             Open project
           </button>
           {spanOf(menuFor) ? (
-            <button type="button" role="menuitem" onClick={() => {
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
                 setMenu(null);
-                plan(menu.name, null);
-              }}>
+                plan(menuFor.key, null);
+              }}
+            >
               Take off the timeline
             </button>
           ) : (
-            <button type="button" role="menuitem" onClick={() => {
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
                 setMenu(null);
-                plan(menu.name, clickSpan(Math.max(todayN, Math.floor(from))));
-              }}>
+                plan(menuFor.key, clickSpan(Math.max(todayN, Math.floor(from))));
+              }}
+            >
               Plan from today
             </button>
           )}

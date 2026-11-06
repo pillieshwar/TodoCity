@@ -1,4 +1,8 @@
 {
+  "0.4.90": [
+    "Timeline: give a project's sections their own bars. Press + beside a project and tick the sections you want",
+    "Section bars sit under their project and move, stretch and open just like project bars"
+  ],
   "0.4.89": [
     "Slack Secretary now follows a routine you set, step by step, in the Slack card",
     "Pick what it reads: DMs and group DMs are on, and channels are read only when you tick them. Mentions are your choice too",

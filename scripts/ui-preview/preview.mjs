@@ -2505,6 +2505,32 @@ await shot("full-timeline-section-move-remove", FULL, sectionsOf({ floorPlans: {
   await p.keyboard.press("Escape");
   if (await p.locator(".tl-row.section").count()) throw new Error("the section bar stayed");
 });
+// v0.4.91: a section's bar opens that section's page; a project's opens the whole project.
+await shot("full-timeline-section-open", FULL, sectionsOf({ floorPlans: { "Q4 launch/Build": [day(10), day(30)] } }), async (p) => {
+  await side(/^Timeline/)(p);
+  await p.locator('.tl-item[data-section="Build"]').click();
+  await p.waitForTimeout(300);
+  if (await p.locator(".timeline").count()) throw new Error("still on the Timeline");
+  if (!(await p.locator(".fh-crumb", { hasText: "Q4 launch" }).count())) throw new Error("clicking a section's bar didn't open the section");
+  if (!(await p.locator(".full-head").filter({ hasText: "Build" }).count())) throw new Error("the section's page isn't Build");
+});
+await shot("full-timeline-project-open-whole", FULL, sectionsOf({ floorPlans: { "Q4 launch/Build": [day(10), day(30)] } }), async (p) => {
+  await side(/^Timeline/)(p);
+  await bar(p, "Q4 launch").click();
+  await p.waitForTimeout(300);
+  if (await p.locator(".fh-crumb", { hasText: "Q4 launch" }).count()) throw new Error("a project's bar opened one section");
+  if (!(await p.locator(".full-head").filter({ hasText: "Q4 launch" }).count())) throw new Error("the project didn't open");
+});
+// v0.4.91: a project with only a section planned still counts as on the timeline.
+await shot("full-timeline-section-only", FULL, sectionsOf({ plans: { "Offsite 2026": PLANS["Offsite 2026"] }, floorPlans: { "Q4 launch/Design": [day(3), day(25)] } }), async (p) => {
+  await side(/^Timeline/)(p);
+  const on = p.locator(".tl-group").filter({ has: p.locator(".tl-group-head", { hasText: "On the timeline" }) });
+  await on.waitFor();
+  if (!(await on.locator(".tl-family", { hasText: "Q4 launch" }).count())) throw new Error("Q4 launch isn't on the timeline though its section is");
+  await on.locator('.tl-item[data-section="Design"]').waitFor();
+  const off = p.locator(".tl-group").filter({ has: p.locator(".tl-group-head", { hasText: "Not planned yet" }) });
+  if (await off.locator(".tl-family", { hasText: "Q4 launch" }).count()) throw new Error("Q4 launch is also under Not planned yet");
+});
 // v0.4.85: one project open at a time in the sidebar.
 await shot("full-sidebar-one-open", FULL, full({ settings: LIGHT }), async (p) => {
   const chev = (n) => p.locator(".sb-building", { hasText: n }).locator(".sb-chev").first();

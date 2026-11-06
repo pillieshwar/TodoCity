@@ -85,7 +85,8 @@ export function Timeline({
   sections?: FloorSummary[];
   today: string;
   locale: string;
-  onOpen: (name: string) => void;
+  /** Open a project's page, or one section's page when `section` is given. */
+  onOpen: (name: string, section?: string | null) => void;
   onPlan: (name: string, span: Span | null) => Promise<void>;
   onPlanSection: (project: string, section: string, span: Span | null) => Promise<void>;
   onColor: (name: string, color: string | null) => void;
@@ -218,7 +219,7 @@ export function Timeline({
   const spanOf = (it: Item): Span | null => (pending.has(it.key) ? pending.get(it.key)! : it.saved);
   const openItem = (key: string) => {
     const it = items.get(key);
-    if (it) onOpen(it.project);
+    if (it) onOpen(it.project, it.section);
   };
 
   // Dragging a bar, or drawing a new one across an empty row.
@@ -298,8 +299,11 @@ export function Timeline({
   };
 
   const projectItems = projects.map((p) => items.get(p.name)!);
-  const planned = projectItems.filter((p) => spanOf(p)).sort((a, b) => spanOf(a)!.start.localeCompare(spanOf(b)!.start) || a.project.localeCompare(b.project));
-  const unplanned = projectItems.filter((p) => !spanOf(p)).sort((a, b) => a.project.localeCompare(b.project));
+  // On the timeline: a project with a bar, or with a section that has one
+  // (ordered by whichever starts first).
+  const firstStart = (p: Item) => [spanOf(p)?.start, ...shownSections(p.project).map((x) => spanOf(x)!.start)].filter((d): d is string => !!d).sort()[0] ?? null;
+  const planned = projectItems.filter((p) => firstStart(p)).sort((a, b) => firstStart(a)!.localeCompare(firstStart(b)!) || a.project.localeCompare(b.project));
+  const unplanned = projectItems.filter((p) => !firstStart(p)).sort((a, b) => a.project.localeCompare(b.project));
   const groups = [
     { id: "planned", label: "On the timeline", items: planned },
     { id: "unplanned", label: "Not planned yet", items: unplanned },
@@ -389,7 +393,7 @@ export function Timeline({
       <div className="tl-row section" key={it.key}>
         <div className="tl-left">
           <span className="tl-branch pastel" style={{ "--fill": it.color ?? undefined } as CSSProperties} aria-hidden />
-          <button type="button" className="tl-open" onClick={() => onOpen(it.project)} title={`Open ${it.project}`}>
+          <button type="button" className="tl-open" onClick={() => onOpen(it.project, it.section)} title={`Open ${it.section}`}>
             {it.section}
           </button>
           {due(it, s)}
@@ -557,10 +561,10 @@ export function Timeline({
             role="menuitem"
             onClick={() => {
               setMenu(null);
-              onOpen(menuFor.project);
+              onOpen(menuFor.project, menuFor.section);
             }}
           >
-            Open project
+            {menuFor.section === null ? "Open project" : "Open section"}
           </button>
           {spanOf(menuFor) ? (
             <button

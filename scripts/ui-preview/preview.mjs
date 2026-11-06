@@ -1612,7 +1612,7 @@ await shot(
   async (p) => {
     await tab(p, "Connectors");
     await p.locator(".slack-secretary.on").getByText(/even when TodoCity is closed/).waitFor();
-    if (!(await p.getByText("Slack Secretary · checked 1 min ago").count())) throw new Error("the card's line doesn't say Slack Secretary");
+    if (!(await p.getByText(/^Slack Secretary · checked (just now|\d+ min ago)$/).count())) throw new Error("the card's line doesn't say Slack Secretary");
     if (await p.getByRole("button", { name: "Check now" }).count()) throw new Error("the in-app check shows while the Secretary runs");
   },
 );

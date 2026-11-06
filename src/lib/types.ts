@@ -537,6 +537,34 @@ export interface SlackStatus {
   secretary?: SlackSecretary;
 }
 
+/** A Slack channel to pick for Slack Secretary (mirrors `slack::Channel`). */
+export interface SlackChannel {
+  id: string;
+  name: string;
+}
+
+/** Slack Secretary's routine, its SOP (mirrors `slack::Routine`). */
+export interface SlackRoutine {
+  dms: boolean;
+  group_dms: boolean;
+  mentions: boolean;
+  /** Read these channels, and no others. */
+  channels: SlackChannel[];
+  priority: boolean;
+  /** The person's own rules, in their words. */
+  rules: string;
+}
+
+/** Mirrors `slack_secretary::RoutineView`. */
+export interface SlackRoutineView {
+  routine: SlackRoutine;
+  every_min: number;
+  choices: number[];
+  summary: string;
+  /** The exact instructions each run gives the agent. */
+  preview: string;
+}
+
 /** Mirrors `slack_secretary::SecretaryView`. */
 export interface SlackSecretary {
   on: boolean;

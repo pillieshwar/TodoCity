@@ -1,13 +1,15 @@
 //! Slack Secretary: a macOS background task (a LaunchAgent) that checks
-//! Slack every five minutes, whether TodoCity is open or not.
+//! Slack on a timer (every five minutes unless the person picks another),
+//! whether TodoCity is open or not.
 //!
-//! - launchd starts `TodoCity --slack-secretary` every [`INTERVAL_S`] and at
-//!   login. Each run asks the person's agent about the time since the last
-//!   good run ([`plan`]), so after the Mac was off or asleep for hours, it
-//!   catches up on those hours (a few at a time, up to [`MAX_CATCH_UP_MS`]).
-//! - It looks wider than the in-app check: DMs, group DMs and every channel
-//!   the person is in ([`slack::Reach::Everything`]), and each task gets a
-//!   priority.
+//! - launchd starts `TodoCity --slack-secretary` every [`Config::every`]
+//!   minutes and at login. Each run asks the person's agent about the time
+//!   since the last good run ([`plan`]), so after the Mac was off or asleep
+//!   for hours, it catches up on those hours (a few at a time, up to
+//!   [`MAX_CATCH_UP_MS`]).
+//! - Each run follows the person's routine ([`slack::Routine`], its SOP):
+//!   DMs and group DMs by default, mentions and channels only when picked,
+//!   a priority on each task, and their own rules.
 //! - It never writes the task database. What it finds goes, one JSON line
 //!   each, into a queue file ([`QueueLine`]) that TodoCity adds to the Inbox
 //!   when it's running (within seconds) or next opens, so TodoCity stays the
@@ -21,12 +23,22 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::slack::{self, Item};
+use crate::slack::{self, Item, Routine};
 
 /// The LaunchAgent's label (the bundle id's, so it reads as TodoCity's).
 pub const LABEL: &str = "app.pluck.desktop.slack-secretary";
-/// launchd starts it this often (seconds).
-pub const INTERVAL_S: u32 = 300;
+/// How often it runs by default (minutes), and the choices offered.
+pub const DEFAULT_EVERY_MIN: u32 = 5;
+pub const EVERY_CHOICES: [u32; 5] = [5, 10, 15, 30, 60];
+
+/// A run interval the person can pick: one of [`EVERY_CHOICES`], else the default.
+pub fn clean_every(min: u32) -> u32 {
+    if EVERY_CHOICES.contains(&min) {
+        min
+    } else {
+        DEFAULT_EVERY_MIN
+    }
+}
 pub const CONFIG_FILE: &str = "slack-secretary.json";
 pub const STATE_FILE: &str = "slack-secretary-state.json";
 pub const QUEUE_FILE: &str = "slack-secretary-inbox.jsonl";
@@ -58,6 +70,16 @@ pub struct Config {
     pub tools: Vec<String>,
     /// Look from here on a first run (Unix ms): where the in-app check was.
     pub start_ms: i64,
+    /// What it reads and how it judges, each run.
+    pub routine: Routine,
+    /// Minutes between runs.
+    pub every_min: u32,
+}
+
+impl Config {
+    pub fn every(&self) -> u32 {
+        clean_every(self.every_min)
+    }
 }
 
 /// Where the background task is up to (it writes this; the app reads it).
@@ -226,8 +248,8 @@ fn xml(s: &str) -> String {
 }
 
 /// The LaunchAgent: runs `exe --slack-secretary` at login and every
-/// [`INTERVAL_S`], as a low-priority background job, logging to `log`.
-pub fn launch_agent_plist(exe: &str, shell: &str, home: &str, log: &str) -> String {
+/// `every_min` minutes, as a low-priority background job, logging to `log`.
+pub fn launch_agent_plist(exe: &str, shell: &str, home: &str, log: &str, every_min: u32) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -265,7 +287,7 @@ pub fn launch_agent_plist(exe: &str, shell: &str, home: &str, log: &str) -> Stri
         label = LABEL,
         exe = xml(exe),
         flag = FLAG,
-        interval = INTERVAL_S,
+        interval = clean_every(every_min) * 60,
         home = xml(home),
         shell = xml(shell),
         log = xml(log),
@@ -448,6 +470,7 @@ mod tests {
             "/bin/zsh",
             "/Users/sam & co",
             "/Users/sam/Library/Logs/TodoCity/slack-secretary.log",
+            5,
         );
         assert!(p.contains("<string>app.pluck.desktop.slack-secretary</string>"));
         assert!(p.contains("<string>--slack-secretary</string>"));
@@ -455,5 +478,23 @@ mod tests {
         assert!(p.contains("<key>RunAtLoad</key>\n\t<true/>"));
         assert!(p.contains("/Users/sam &amp; co"), "paths are escaped");
         assert!(!p.contains("sam & co"));
+        let slow = launch_agent_plist("/x", "/bin/zsh", "/Users/sam", "/l", 30);
+        assert!(slow.contains("<integer>1800</integer>"));
+        let odd = launch_agent_plist("/x", "/bin/zsh", "/Users/sam", "/l", 7);
+        assert!(
+            odd.contains("<integer>300</integer>"),
+            "only the offered choices"
+        );
+    }
+
+    #[test]
+    fn settings_from_before_routines_read_as_the_defaults() {
+        let c: Config =
+            serde_json::from_str(r#"{"agent":"claude","tools":[],"start_ms":1}"#).unwrap();
+        assert_eq!(c.every(), DEFAULT_EVERY_MIN);
+        assert_eq!(c.routine, Routine::default());
+        assert!(c.routine.channels.is_empty(), "no channels unless picked");
+        assert_eq!(clean_every(15), 15);
+        assert_eq!(clean_every(0), 5);
     }
 }

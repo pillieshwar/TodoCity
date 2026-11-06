@@ -1,4 +1,4 @@
-import type { SlackStatus } from "./types";
+import type { SlackChannel, SlackRoutine, SlackStatus } from "./types";
 
 /** Minutes between `a` and `b` (local `YYYY-MM-DDTHH:MM:SS`, or a Date). */
 function minutesBetween(from: string | Date, to: Date): number {
@@ -81,4 +81,26 @@ export function connectSteps(agent: string | null, reason: SlackStatus["reason"]
 /** The first message for "Ask the agent to help connect Slack". */
 export function helpConnectPrompt(): string {
   return "I want you to be able to read my Slack messages through an MCP server or connector, so TodoCity's Slack connector can use you. Check whether you already have Slack tools; if not, walk me through adding Slack (prefer Slack's official MCP server) step by step. Don't send anything in Slack.";
+}
+
+/** Whether a routine reads anything at all (it needs one source to run). */
+export function readsAnything(r: SlackRoutine): boolean {
+  return r.dms || r.group_dms || r.mentions || r.channels.length > 0;
+}
+
+/** The routine with `c` ticked or unticked. */
+export function toggleChannel(r: SlackRoutine, c: SlackChannel): SlackRoutine {
+  const has = r.channels.some((x) => x.id === c.id);
+  return { ...r, channels: has ? r.channels.filter((x) => x.id !== c.id) : [...r.channels, c] };
+}
+
+/** Channels whose name has `q` in it (any case, with or without #). */
+export function filterChannels(list: SlackChannel[], q: string): SlackChannel[] {
+  const t = q.trim().replace(/^#/, "").toLowerCase();
+  return t ? list.filter((c) => c.name.toLowerCase().includes(t)) : list;
+}
+
+/** "every 5 minutes", "every hour". */
+export function everyText(min: number): string {
+  return min === 60 ? "every hour" : `every ${min} minutes`;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ago, connectSteps, slackLine, until } from "./slack";
-import type { SlackStatus } from "./types";
+import { ago, connectSteps, everyText, filterChannels, readsAnything, slackLine, toggleChannel, until } from "./slack";
+import type { SlackRoutine, SlackStatus } from "./types";
 
 const NOW = new Date(2026, 10, 5, 10, 0, 0);
 
@@ -53,5 +53,35 @@ describe("Slack connector text", () => {
     const read = connectSteps("cursor", "cant_read");
     expect(read[0]).toContain("signed in to Slack");
     expect(read[read.length - 1]).toContain("Check again");
+  });
+});
+
+describe("Slack Secretary's routine", () => {
+  const base: SlackRoutine = { dms: true, group_dms: true, mentions: false, channels: [], priority: true, rules: "" };
+  const launch = { id: "C01", name: "launch" };
+
+  it("reads channels only when they're ticked", () => {
+    expect(base.channels).toEqual([]);
+    const on = toggleChannel(base, launch);
+    expect(on.channels).toEqual([launch]);
+    expect(toggleChannel(on, launch).channels).toEqual([]);
+  });
+
+  it("needs something to read", () => {
+    expect(readsAnything(base)).toBe(true);
+    const none = { ...base, dms: false, group_dms: false };
+    expect(readsAnything(none)).toBe(false);
+    expect(readsAnything(toggleChannel(none, launch))).toBe(true);
+  });
+
+  it("finds channels by name", () => {
+    const list = [launch, { id: "C02", name: "Design-Reviews" }];
+    expect(filterChannels(list, "#des").map((c) => c.id)).toEqual(["C02"]);
+    expect(filterChannels(list, "  ")).toHaveLength(2);
+  });
+
+  it("says the timer plainly", () => {
+    expect(everyText(5)).toBe("every 5 minutes");
+    expect(everyText(60)).toBe("every hour");
   });
 });

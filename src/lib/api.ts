@@ -22,6 +22,9 @@ import type {
   SlackSetupPlan,
   SlackStatus,
   SlackSecretary,
+  SlackChannel,
+  SlackRoutine,
+  SlackRoutineView,
   FocusStatus,
   AgentChange,
   AgentCliStatus,
@@ -142,6 +145,12 @@ export const api = {
   slackCheckNow: () => invoke<void>("slack_check_now"),
   /** Turn Slack Secretary (the background task) on or off. */
   slackSecretarySet: (on: boolean) => invoke<SlackSecretary>("slack_secretary_set", { on }),
+  /** Slack Secretary's routine (what it reads, how it judges) and its timer. */
+  slackSecretaryRoutine: () => invoke<SlackRoutineView>("slack_secretary_routine"),
+  slackSecretarySave: (routine: SlackRoutine, everyMin: number) =>
+    invoke<SlackRoutineView>("slack_secretary_save", { routine, everyMin }),
+  /** Ask the agent for the channels to pick from. */
+  slackSecretaryChannels: () => invoke<SlackChannel[]>("slack_secretary_channels"),
   focusStatus: () => invoke<FocusStatus>("focus_status"),
   focusSet: (change: { enabled?: boolean; calendar?: string; shortcut?: string; minutes?: number }) =>
     invoke<FocusStatus>("focus_set", {

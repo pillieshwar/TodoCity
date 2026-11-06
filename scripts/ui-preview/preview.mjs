@@ -211,6 +211,22 @@ function mockTauri(s) {
   const callbacks = new Map();
   const listeners = new Map();
   let id = 1;
+  // What slack_secretary_routine/save answer in the fake backend.
+  const fakeRoutineView = (routine, every) => {
+    const parts = [routine.dms && "DMs", routine.group_dms && "group DMs", routine.mentions && "mentions", routine.channels.length === 1 ? `#${routine.channels[0].name}` : routine.channels.length > 1 ? `${routine.channels.length} channels` : null].filter(Boolean);
+    const summary = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : (parts[0] ?? "nothing");
+    const channels = routine.channels.length
+      ? `Channels to read, and no others: ${routine.channels.map((c) => `#${c.name} (${c.id})`).join(", ")}.`
+      : "Don't read any channels.";
+    const rules = routine.rules ? `\n\nThe user's own rules for this:\n${routine.rules}` : "";
+    return {
+      routine,
+      every_min: every,
+      choices: [5, 10, 15, 30, 60],
+      summary,
+      preview: `You're helping TodoCity, the user's to-do app, find Slack messages that need the user.\n\nLook only at ${summary}. ${channels}${rules}`,
+    };
+  };
   window.__emit = (event, payload) => {
     for (const cb of listeners.get(event) ?? []) callbacks.get(cb)?.({ event, id: 0, payload });
   };
@@ -362,6 +378,22 @@ function mockTauri(s) {
     },
     slack_check_now: () => {
       window.__slackCheckNow = true;
+    },
+    // v0.4.89: Slack Secretary's routine (its SOP) and timer.
+    slack_secretary_routine: () => fakeRoutineView(s.routine ?? { dms: true, group_dms: true, mentions: false, channels: [], priority: true, rules: "" }, s.every ?? 5),
+    slack_secretary_save: (a) => {
+      s.routine = a.routine;
+      s.every = a.everyMin;
+      window.__routineSaved = { routine: a.routine, every: a.everyMin };
+      return fakeRoutineView(a.routine, a.everyMin);
+    },
+    slack_secretary_channels: () => {
+      window.__channelsAsked = (window.__channelsAsked ?? 0) + 1;
+      return [
+        { id: "C01", name: "launch" },
+        { id: "C02", name: "design-reviews" },
+        { id: "C03", name: "random" },
+      ];
     },
     // v0.4.88: Slack Secretary (a background task that checks Slack).
     slack_secretary_set: (a) => {
@@ -1590,6 +1622,36 @@ await shot("full-slack-ready", FULL, full({ settings: DARK }), async (p) => {
   }, SLACK_READY);
   await p.locator(".slack-dialog").getByText("Slack is connected").waitFor();
 }, true);
+// v0.4.89: Slack Secretary's routine — what it reads (channels only when ticked), how often, its rules.
+await shot(
+  "panel-connectors-slack-routine",
+  PANEL,
+  scenario({ slack: { ...SLACK_READY, secretary: { on: true, installed: true, last_checked: localStamp(-1), behind: null, last_error: null, found: 5 } } }),
+  async (p) => {
+    await tab(p, "Connectors");
+    const r = p.locator(".sec-routine");
+    await r.locator(".sec-steps").waitFor();
+    if (!(await r.getByRole("checkbox", { name: "Direct messages" }).isChecked())) throw new Error("DMs are read by default");
+    if (await r.getByRole("checkbox", { name: "Mentions of you in any channel" }).isChecked()) throw new Error("mentions are off by default");
+    if (await r.locator(".sec-chip").count()) throw new Error("no channels by default");
+    await r.getByRole("button", { name: "Choose channels…" }).click();
+    await r.getByRole("checkbox", { name: "#launch" }).check();
+    await p.waitForFunction(() => window.__routineSaved?.routine.channels.some((c) => c.id === "C01"));
+    await r.getByRole("searchbox", { name: "Find a channel" }).fill("des");
+    if ((await r.locator(".sec-picker-list li").count()) !== 1) throw new Error("the channel filter didn't narrow the list");
+    await r.getByRole("button", { name: "Done" }).click();
+    await r.locator(".sec-chip", { hasText: "#launch" }).waitFor();
+    await r.getByRole("combobox", { name: "How often Slack Secretary runs" }).selectOption("15");
+    await p.waitForFunction(() => window.__routineSaved?.every === 15);
+    await r.getByRole("textbox", { name: "Your own rules for Slack Secretary" }).fill("Anything from Maya is urgent.");
+    await r.getByRole("textbox", { name: "Your own rules for Slack Secretary" }).blur();
+    await p.waitForFunction(() => window.__routineSaved?.routine.rules === "Anything from Maya is urgent.");
+    await r.getByRole("button", { name: "See the exact instructions" }).click();
+    await r.locator(".sec-prompt", { hasText: "Channels to read, and no others: #launch" }).waitFor();
+    await r.getByText("Saved · the next run follows it").waitFor();
+    await r.scrollIntoViewIfNeeded();
+  },
+);
 // v0.4.88: Slack Secretary — offered once Slack connects; a background task checks Slack.
 await shot("full-slack-secretary-offer", FULL, full({ settings: LIGHT }), async (p) => {
   await p.locator(".sidebar").getByRole("button", { name: /^Settings/ }).click();

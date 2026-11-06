@@ -876,6 +876,46 @@ button.small { border-radius: 7px; padding: 4px 10px; font-size: 12px; cursor: p
 .slack-offer { margin-top: 4px; padding: 12px; border-radius: 10px; background: var(--teal-soft); display: flex; flex-direction: column; gap: 6px; }
 .slack-offer p { margin: 0 !important; font-size: 12px !important; }
 .slack-offer-on { color: var(--teal) !important; font-weight: 600; }
+/* Slack Secretary's routine: its steps, each set here. */
+.sec-routine { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 6px; }
+.sec-routine-toggle {
+  display: flex; align-items: baseline; gap: 6px; width: 100%; border: 0; background: none; padding: 4px 0;
+  font: inherit; font-size: 12.5px; color: var(--ink); text-align: left; cursor: pointer;
+}
+.sec-routine-chev { width: 10px; color: var(--muted); flex: none; }
+.sec-steps { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 12.5px; }
+.sec-steps > li { display: flex; gap: 10px; align-items: flex-start; }
+.sec-steps > li > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; line-height: 1.45; }
+.sec-steps small { color: var(--muted); font-size: 11.5px; }
+.sec-n {
+  flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--teal-soft); color: var(--teal);
+  font-size: 11px; font-weight: 700; display: grid; place-items: center; margin-top: 1px;
+}
+.sec-every { display: flex; align-items: center; gap: 8px; }
+.sec-every select, .sec-picker input, .sec-rules {
+  font: inherit; font-size: 12.5px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--paper); color: var(--ink);
+}
+.sec-check { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.sec-check input { margin: 0; accent-color: var(--teal); }
+.sec-channels { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; padding: 8px 10px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); }
+.sec-channels-head { display: flex; flex-direction: column; }
+.sec-channels > .ghost { align-self: flex-start; }
+.sec-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.sec-chip { display: inline-flex; align-items: center; gap: 3px; padding: 1px 4px 1px 8px; border-radius: 99px; background: var(--teal-soft); color: var(--teal); font-size: 11.5px; font-weight: 600; }
+.sec-chip button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 0 3px; }
+.sec-picker { display: flex; flex-direction: column; gap: 6px; }
+.sec-picker > .ghost { align-self: flex-start; }
+.sec-picker-list { list-style: none; margin: 0; padding: 0; max-height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.sec-picker-none { color: var(--muted); font-size: 12px; }
+.sec-rules { width: 100%; box-sizing: border-box; resize: vertical; min-height: 54px; line-height: 1.4; }
+.sec-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.sec-foot .link-btn { font-size: 11.5px; padding: 0; }
+.sec-saved { color: var(--muted); font-size: 11.5px; }
+.sec-prompt {
+  margin: 6px 0 0; padding: 10px; border-radius: 8px; background: #1b1a18; color: #e8e6e1; max-height: 220px; overflow: auto;
+  font: 11px/1.45 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
+}
 /* Slack connector: one switch in the card's head; its agent reads Slack. */
 .connector-icon.slack img { display: block; }
 .slack-switch { margin-left: 4px; }

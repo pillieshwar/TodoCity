@@ -198,6 +198,11 @@ pub fn run_background() -> i32 {
         say("Slack Secretary isn't set up: turn it on in TodoCity → Settings → Connectors → Slack");
         return 0;
     }
+    let routine = config.routine.clone().clean();
+    if !routine.reads_anything() {
+        say("the routine reads nothing: pick DMs, mentions or channels in TodoCity → Settings → Connectors → Slack");
+        return 0;
+    }
     let state_path = dir.join(sec::STATE_FILE);
     let mut state: RunState = read_json(&state_path);
     let now = now_ms();
@@ -239,14 +244,13 @@ pub fn run_background() -> i32 {
             crate::slack::clock(*until)
         );
         say(&format!("looking at {span} with {name}"));
-        match crate::slack::ask(
-            &config.agent,
-            &config.tools,
-            *since,
-            *until,
-            rules::Reach::Everything,
-        ) {
-            Ok(scan) => {
+        match crate::slack::ask(&config.agent, &config.tools, *since, *until, &routine) {
+            Ok(mut scan) => {
+                if !routine.priority {
+                    for i in &mut scan.items {
+                        i.priority = 0;
+                    }
+                }
                 let fresh = sec::record_ok(&mut state, scan.items, scan.covered_until_ms, now_ms());
                 say(&format!("{span}: {} new", fresh.len()));
                 if fresh.is_empty() {
@@ -349,10 +353,14 @@ fn install(app: &AppHandle) -> Result<(), String> {
         "Connect Slack first (Settings → Connectors → Slack), then turn on Slack Secretary.",
     )?;
     let dir = data_dir(app);
+    // Keep the person's routine and timer; take the agent from Slack's setup.
+    let old: Config = read_json(&dir.join(sec::CONFIG_FILE));
     let config = Config {
         agent,
         tools: s.tools.clone(),
         start_ms: s.cursor_ms,
+        routine: old.routine.clone(),
+        every_min: old.every(),
     };
     write_json(&dir.join(sec::CONFIG_FILE), &config)?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -369,6 +377,7 @@ fn install(app: &AppHandle) -> Result<(), String> {
         &shell,
         &home.to_string_lossy(),
         &log_path().to_string_lossy(),
+        config.every(),
     );
     let path = plist_path();
     let _ = std::fs::create_dir_all(path.parent().unwrap_or(home.as_path()));
@@ -513,4 +522,121 @@ pub fn import(app: &AppHandle) {
         crate::notifications::send_plain(app, "slack-added", "From Slack".into(), body);
         crate::slack::changed(app);
     }
+}
+
+// ── The routine (Slack Secretary's SOP) ────────────────────────────────────
+
+/// The routine as the Slack card shows it.
+#[derive(Debug, Clone, Serialize)]
+pub struct RoutineView {
+    pub routine: rules::Routine,
+    pub every_min: u32,
+    pub choices: Vec<u32>,
+    /// "DMs, group DMs and 2 channels".
+    pub summary: String,
+    /// The exact instructions each run gives the agent (for the last few
+    /// minutes, as an example).
+    pub preview: String,
+}
+
+fn routine_view(config: &Config) -> RoutineView {
+    let routine = config.routine.clone().clean();
+    let now = now_ms();
+    let every_ms = config.every() as i64 * 60_000;
+    let today = chrono::Local::now().date_naive();
+    RoutineView {
+        summary: routine.summary(),
+        preview: rules::scan_prompt(now - every_ms, now, today, &routine),
+        every_min: config.every(),
+        choices: sec::EVERY_CHOICES.to_vec(),
+        routine,
+    }
+}
+
+#[tauri::command]
+pub fn slack_secretary_routine(app: AppHandle) -> RoutineView {
+    let config: Config = read_json(&data_dir(&app).join(sec::CONFIG_FILE));
+    routine_view(&config)
+}
+
+/// Save the routine and timer; with Slack Secretary on, its next run
+/// follows them (a new timer re-installs the background task).
+#[tauri::command]
+pub async fn slack_secretary_save(
+    app: AppHandle,
+    routine: rules::Routine,
+    every_min: u32,
+) -> Result<RoutineView, String> {
+    let routine = routine.clean();
+    if !routine.reads_anything() {
+        return Err(
+            "Pick at least one thing to read: DMs, group DMs, mentions or a channel.".into(),
+        );
+    }
+    let app2 = app.clone();
+    let view = tauri::async_runtime::spawn_blocking(move || -> Result<RoutineView, String> {
+        let path = data_dir(&app2).join(sec::CONFIG_FILE);
+        let mut config: Config = read_json(&path);
+        let timer_changed = config.every() != sec::clean_every(every_min);
+        config.routine = routine;
+        config.every_min = sec::clean_every(every_min);
+        write_json(&path, &config)?;
+        let on = app2.state::<SlackService>().get().secretary;
+        if on && timer_changed {
+            install(&app2)?;
+        }
+        Ok(routine_view(&config))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let agent = app.state::<SlackService>().get().agent;
+    crate::activity::log(
+        &app,
+        "slack",
+        agent.as_deref(),
+        "info",
+        format!(
+            "Slack Secretary's routine saved: {} every {} minutes",
+            view.summary, view.every_min
+        ),
+    );
+    crate::slack::changed(&app);
+    Ok(view)
+}
+
+/// Ask the agent for the person's channels, to pick from.
+#[tauri::command]
+pub async fn slack_secretary_channels(app: AppHandle) -> Result<Vec<rules::Channel>, String> {
+    let s = app.state::<SlackService>().get();
+    let agent = s
+        .agent
+        .clone()
+        .filter(|_| s.phase == Phase::Ready)
+        .ok_or("Connect Slack first (Settings → Connectors → Slack).")?;
+    let tools = s.tools.clone();
+    let name = crate::slack::agent_name(&agent);
+    crate::activity::log(
+        &app,
+        "slack",
+        Some(&agent),
+        "working",
+        format!("Asking {name} for your Slack channels…"),
+    );
+    let found = tauri::async_runtime::spawn_blocking(move || {
+        crate::slack::run_json(&agent, &tools, &rules::channels_prompt())
+            .and_then(|json| rules::parse_channels(&json))
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    match &found {
+        Ok(list) => crate::activity::log(
+            &app,
+            "slack",
+            s.agent.as_deref(),
+            "ok",
+            format!("{name} found {} channels", list.len()),
+        ),
+        Err(e) => crate::activity::log(&app, "slack", s.agent.as_deref(), "error", e.clone()),
+    }
+    found
 }

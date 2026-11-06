@@ -1,4 +1,10 @@
 {
+  "0.4.89": [
+    "Slack Secretary now follows a routine you set, step by step, in the Slack card",
+    "Pick what it reads: DMs and group DMs are on, and channels are read only when you tick them. Mentions are your choice too",
+    "Set how often it runs: every 5 minutes by default, or 10, 15, 30 minutes or every hour",
+    "Turn priorities on or off, add your own rules in plain words, and see the exact instructions it gives your agent"
+  ],
   "0.4.88": [
     "Slack Secretary: once Slack is connected, turn it on and a background task checks Slack every 5 minutes, even when TodoCity is closed",
     "If your Mac was off or asleep, it catches up on those hours, so nothing is missed",

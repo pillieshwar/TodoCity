@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { fileLogo } from "../lib/sourceLogos";
-import { ago, connectSteps, until } from "../lib/slack";
-import type { SlackAgent, SlackSetupPlan, SlackStatus } from "../lib/types";
+import { ago, connectSteps, everyText, filterChannels, readsAnything, toggleChannel, until } from "../lib/slack";
+import type { SlackAgent, SlackChannel, SlackRoutine, SlackRoutineView, SlackSetupPlan, SlackStatus } from "../lib/types";
 import { AgentTile } from "./AgentPanel";
 import { InfoTip } from "./InfoTip";
 
@@ -13,7 +13,7 @@ export function SlackGlyph({ size = 20 }: { size?: number }) {
 }
 
 export const SECRETARY_ABOUT =
-  "A background task on your Mac checks Slack every 5 minutes, even when TodoCity is closed. If your Mac was off or asleep, it catches up on those hours. It looks at your DMs, group DMs and the channels you're in, and gives each task a priority. macOS lists it under System Settings → General → Login Items.";
+  "A background task on your Mac follows a routine you set: every 5 minutes (or as often as you pick), even when TodoCity is closed, it reads your DMs and group DMs, plus any mentions and channels you tick, and gives each task a priority. If your Mac was off or asleep, it catches up on those hours. macOS lists it under System Settings → General → Login Items.";
 
 /** The Slack Secretary switch and how it's doing, in the Slack card. */
 export function SecretaryRow({ status }: { status: SlackStatus }) {
@@ -65,12 +65,231 @@ export function SecretaryRow({ status }: { status: SlackStatus }) {
         </p>
       ) : (
         <p className="setting-line-text muted slack-secretary-line">
-          Keep checking Slack every 5 minutes, even with TodoCity closed, across DMs, groups and your channels, with a priority on each task.
+          Keep checking Slack every 5 minutes, even with TodoCity closed, following the routine below: DMs and group DMs, plus the channels you tick.
         </p>
       )}
       {on && sec?.last_error && <p className="slack-detail">Last try: {sec.last_error} It tries again on its own.</p>}
       {on && !!sec?.found && <p className="slack-detail">{sec.found === 1 ? "1 task found so far" : `${sec.found} tasks found so far`}</p>}
       {err && <p className="rem-error">{err}</p>}
+      <SecretaryRoutine agentName={status.agent_name ?? "your agent"} startOpen={on} />
+    </div>
+  );
+}
+
+/**
+ * Slack Secretary's routine, its SOP: the steps each run follows, each one
+ * set here. Saves as you change it; the next run follows it.
+ */
+export function SecretaryRoutine({ agentName, startOpen }: { agentName: string; startOpen: boolean }) {
+  const [view, setView] = useState<SlackRoutineView | null>(null);
+  const [draft, setDraft] = useState<SlackRoutine | null>(null);
+  const [every, setEvery] = useState(5);
+  const [rulesText, setRulesText] = useState("");
+  const [open, setOpen] = useState(startOpen);
+  const [saved, setSaved] = useState<"" | "saving" | "saved">("");
+  const [err, setErr] = useState<string | null>(null);
+  const [list, setList] = useState<SlackChannel[] | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [q, setQ] = useState("");
+  const [showPrompt, setShowPrompt] = useState(false);
+  const rulesTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    api
+      .slackSecretaryRoutine()
+      .then((v) => {
+        setView(v);
+        setDraft(v.routine);
+        setEvery(v.every_min);
+        setRulesText(v.routine.rules);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  async function save(next: SlackRoutine, nextEvery: number) {
+    setDraft(next);
+    setEvery(nextEvery);
+    setErr(null);
+    if (!readsAnything(next)) {
+      setErr("Pick at least one thing to read: DMs, group DMs, mentions or a channel.");
+      return;
+    }
+    setSaved("saving");
+    try {
+      const v = await api.slackSecretarySave(next, nextEvery);
+      setView(v);
+      setSaved("saved");
+    } catch (e) {
+      setErr(String(e));
+      setSaved("");
+    }
+  }
+
+  function setRules(text: string) {
+    setRulesText(text);
+    window.clearTimeout(rulesTimer.current);
+    rulesTimer.current = window.setTimeout(() => {
+      if (draft) void save({ ...draft, rules: text }, every);
+    }, 800);
+  }
+
+  async function chooseChannels() {
+    setPicking(true);
+    if (list) return;
+    setLoading(true);
+    setErr(null);
+    try {
+      setList(await api.slackSecretaryChannels());
+    } catch (e) {
+      setErr(String(e));
+      setPicking(false);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!draft || !view) return null;
+  const flip = (k: "dms" | "group_dms" | "mentions" | "priority") => void save({ ...draft, [k]: !draft[k] }, every);
+  const shown = filterChannels(list ?? [], q);
+
+  return (
+    <div className="sec-routine">
+      <button type="button" className="sec-routine-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span className="sec-routine-chev" aria-hidden>
+          {open ? "▾" : "▸"}
+        </span>
+        <span>
+          <b>Routine</b> · reads {view.summary}, {everyText(every)}
+        </span>
+      </button>
+      {open && (
+        <>
+          <ol className="sec-steps">
+            <li>
+              <span className="sec-n">1</span>
+              <div>
+                <label className="sec-every">
+                  <b>Run</b>
+                  <select value={every} aria-label="How often Slack Secretary runs" onChange={(e) => void save(draft, Number(e.target.value))}>
+                    {view.choices.map((m) => (
+                      <option key={m} value={m}>
+                        {everyText(m)}
+                        {m === 5 ? " (default)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <small>And when your Mac starts, catching up on any time it was off.</small>
+              </div>
+            </li>
+            <li>
+              <span className="sec-n">2</span>
+              <div>
+                <b>Ask {agentName} to read</b>
+                <label className="sec-check">
+                  <input type="checkbox" checked={draft.dms} onChange={() => flip("dms")} /> Direct messages
+                </label>
+                <label className="sec-check">
+                  <input type="checkbox" checked={draft.group_dms} onChange={() => flip("group_dms")} /> Group DMs
+                </label>
+                <label className="sec-check">
+                  <input type="checkbox" checked={draft.mentions} onChange={() => flip("mentions")} /> Mentions of you in any channel
+                </label>
+                <div className="sec-channels">
+                  <span className="sec-channels-head">
+                    <span>Channels</span>
+                    <small>Only the channels you tick are read.</small>
+                  </span>
+                  {draft.channels.length > 0 && (
+                    <span className="sec-chips">
+                      {draft.channels.map((c) => (
+                        <span key={c.id} className="sec-chip">
+                          #{c.name}
+                          <button type="button" aria-label={`Stop reading #${c.name}`} onClick={() => void save(toggleChannel(draft, c), every)}>
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                  {!picking ? (
+                    <button type="button" className="ghost small" onClick={() => void chooseChannels()}>
+                      {draft.channels.length ? "Change channels…" : "Choose channels…"}
+                    </button>
+                  ) : loading ? (
+                    <p className="setting-line slack-state">
+                      <span className="slack-pulse" aria-hidden />
+                      <span className="setting-line-text">Asking {agentName} for your channels. This can take a minute…</span>
+                    </p>
+                  ) : (
+                    <div className="sec-picker">
+                      <input type="search" placeholder="Find a channel" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find a channel" />
+                      <ul className="sec-picker-list">
+                        {shown.map((c) => (
+                          <li key={c.id}>
+                            <label className="sec-check">
+                              <input type="checkbox" checked={draft.channels.some((x) => x.id === c.id)} onChange={() => void save(toggleChannel(draft, c), every)} />#{c.name}
+                            </label>
+                          </li>
+                        ))}
+                        {shown.length === 0 && <li className="sec-picker-none">{list?.length ? "Try another name." : `${agentName} didn't list any channels.`}</li>}
+                      </ul>
+                      <button type="button" className="ghost small" onClick={() => setPicking(false)}>
+                        Done
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </li>
+            <li>
+              <span className="sec-n">3</span>
+              <div>
+                <b>Make a task</b> for each message that asks you to do, answer, decide, review, approve or send something.
+                <label className="sec-check">
+                  <input type="checkbox" checked={draft.priority} onChange={() => flip("priority")} /> Give each task a priority: urgent, high or medium
+                </label>
+              </div>
+            </li>
+            <li>
+              <span className="sec-n">4</span>
+              <div>
+                <b>Follow your own rules</b> <small>(optional)</small>
+                <textarea
+                  className="sec-rules"
+                  value={rulesText}
+                  maxLength={1000}
+                  rows={3}
+                  aria-label="Your own rules for Slack Secretary"
+                  placeholder="For example: anything from Maya is urgent. Skip messages about lunch."
+                  onChange={(e) => setRules(e.target.value)}
+                  onBlur={() => {
+                    window.clearTimeout(rulesTimer.current);
+                    if (rulesText !== draft.rules) void save({ ...draft, rules: rulesText }, every);
+                  }}
+                />
+              </div>
+            </li>
+            <li>
+              <span className="sec-n">5</span>
+              <div>
+                <b>Add them to your Inbox</b>, one task per message, with where it came from.
+              </div>
+            </li>
+          </ol>
+          <div className="sec-foot">
+            <button type="button" className="link-btn quiet" onClick={() => setShowPrompt((v) => !v)}>
+              {showPrompt ? "Hide the exact instructions" : "See the exact instructions"}
+            </button>
+            <span className="sec-saved" aria-live="polite">
+              {saved === "saving" ? "Saving…" : saved === "saved" ? "Saved · the next run follows it" : ""}
+            </span>
+          </div>
+          {showPrompt && <pre className="sec-prompt">{view.preview}</pre>}
+          {err && <p className="rem-error">{err}</p>}
+        </>
+      )}
     </div>
   );
 }

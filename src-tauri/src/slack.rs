@@ -517,19 +517,12 @@ pub(crate) fn add_items(app: &AppHandle, items: &[Item]) -> Vec<String> {
 
 // ── Scanning ──────────────────────────────────────────────────────────────
 
-/// Ask the agent about one window; the checked answer. Runs without the
-/// app too (Slack Secretary's background task).
-pub(crate) fn ask(
-    agent: &str,
-    tools: &[String],
-    since: i64,
-    until: i64,
-    reach: rules::Reach,
-) -> Result<rules::Scan, String> {
+/// Ask the agent one question headless, with only its Slack read tools
+/// where it can be told so; the JSON in its answer. Runs without the app
+/// too (Slack Secretary's background task).
+pub(crate) fn run_json(agent: &str, tools: &[String], message: &str) -> Result<String, String> {
     let cli = agent_runs::cli(agent).ok_or("Pick an agent for Slack in Settings → Connectors.")?;
-    let today = Local::now().date_naive();
-    let message = rules::scan_prompt(since, until, today, reach);
-    let args = rules::scan_args(agent, &message, tools)
+    let args = rules::scan_args(agent, message, tools)
         .ok_or("Turn Slack off and on again in Settings → Connectors to set it up again.")?;
     let (program, argv) = crate::agent_panel::agent_argv(cli, &args);
     // A folder of its own with nothing in it.
@@ -544,12 +537,25 @@ pub(crate) fn ask(
                 format!("{}: {last}", cli.name)
             }
         })?;
-    let json = todocity_core::agent_llm::json_from_reply(&reply).ok_or_else(|| {
+    todocity_core::agent_llm::json_from_reply(&reply).ok_or_else(|| {
         format!(
             "{} didn't answer with the list TodoCity asked for.",
             cli.name
         )
-    })?;
+    })
+}
+
+/// Ask the agent about one window, following `routine`; the checked answer.
+pub(crate) fn ask(
+    agent: &str,
+    tools: &[String],
+    since: i64,
+    until: i64,
+    routine: &rules::Routine,
+) -> Result<rules::Scan, String> {
+    let today = Local::now().date_naive();
+    let message = rules::scan_prompt(since, until, today, routine);
+    let json = run_json(agent, tools, &message)?;
     rules::parse_scan(&json, since, until, today)
 }
 
@@ -576,7 +582,13 @@ fn scan_once(app: &AppHandle) -> bool {
             agent_name(&agent)
         ),
     );
-    let result = ask(&agent, &state.tools, since, until, rules::Reach::Mentions);
+    let result = ask(
+        &agent,
+        &state.tools,
+        since,
+        until,
+        &rules::Routine::in_app(),
+    );
     // Turned off (or set up again) meanwhile: drop the answer.
     let still = service.get();
     let current = still.enabled && still.phase == Phase::Ready && still.agent == state.agent;
